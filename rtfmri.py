@@ -4,28 +4,131 @@
 
 import os
 import sys
+import glob
 import time
 import Queue as queue
-import shlex
 import signal
 import argparse
 import datetime
 import threading
-import subprocess
-import collections
 
+
+import numpy as np
 import dicom
+import nibabel as nib
+from nibabel.nicom import dicomreaders as dread
+from nibabel.nicom import dicomwrappers as dwrap
 
-QUANTIZATION_CORRECTION = datetime.timedelta(seconds=2)
+
+
+SLICES_PER_VOLUME = 46
+AFFINE = None
+CNI_TOP_DIR = '/net/cnimr/export/home1/sdc_image_pool/images/'
+
+
+
+class Utilities(object):
+
+
+	def __init__(self, dicom_prefix='i*'):
+		self.server_dir = CNI_TOP_DIR
+		self.slices = SLICES_PER_VOLUME
+		
+			
+	def findrecentdir(self):
+		all_dirs = [dir for dir in os.listdir('.') if os.path.isdir(dir)]
+		if all_dirs:
+			last_mod = max((os.path.getmtime(dir),dir) for dir in all_dirs)[1]
+			return last_mod
+		else: 
+			return False
+			
+			
+	def erase_realtimedir(self):
+		if os.path.exists(self.realtime_dir):
+			shutil.rmtree(self.realtime_dir)
+		os.mkdir(self.realtime_dir)
+		
+		
+	def erase_waitingroom(self):
+		if os.path.exists(self.waitingroom):
+			shutil.rmtree(self.waitingroom)
+		os.mkdir(self.waitingroom)
+		
+
+	def navigatedown(self):
+		os.chdir(self.server_dir)
+		current_dir = self.server_dir
+		bottom = False
+		while not bottom:
+			sub_dir = self.findrecentdir()
+			if not sub_dir:
+				bottom = True
+			else:
+				os.chdir(sub_dir)
+				current_dir = sub_dir
+		return os.getcwd()
+
+
+	def plaincopy(self,directory='.',exclude=[],destination=''):
+		if directory:
+			os.chdir(directory)
+		print 'Copying files from: '+directory
+		all_files = os.listdir('.')
+		for dicom_file in all_files:
+			if not dicom_file in exclude:
+				if not os.path.exists(self.realtime_dir+destination):
+					curdir = os.getcwd()
+					os.chdir(self.realtime_dir)
+					os.mkdir(destination)
+					os.chdir(curdir)
+				shutil.copy(dicom_file,self.realtime_dir+destination)
+		if directory or not directory == '.':
+			os.chdir('../')
+
+
+	def calibration(self,copyflag):
+		most_recent_dir = self.navigatedown()
+		os.chdir('../')
+		if copyflag:
+			plaincopy(directory=most_recent_dir,exclude=[],destination='calibration')
+		all_dirs = [dir for dir in os.listdir('.') if os.path.isdir(dir)]
+		return [os.getcwd(),all_dirs]
+		
+
+	def enternewdirectory(self,rootdir,exceptions,waittime):
+		os.chdir(rootdir)
+		baseT = time.time()
+		while (time.time() - baseT) < waittime:
+			recent_dir = self.findrecentdir()
+			if not recent_dir in exceptions:
+				print recent_dir
+				os.chdir(recent_dir)
+				return os.getcwd()
+		return False
+		
+	
+	def dicom_header_reader(dicom_file):
+		start_time = time.time()
+		file_data = dicom.read_file(dicom_file)
+		print file_data.AcquisitionNumber
+		end_time = time.time()
+		print end_time-start_time
+
+
+
+
+
+
 
 
 class DicomFinder(threading.Thread):
 
     """DicomFinder finds the latest dicom files and pushes them into the dicom queue as dicom objects."""
 
-    def __init__(self, exam_dir, dicom_q, interval):
+    def __init__(self, exam_path, dicom_q, interval):
         super(DicomFinder, self).__init__()
-        self.exam_dir = exam_dir
+        self.exam_path = exam_path
         self.dicom_q = dicom_q
         self.interval = interval
         self.alive = True
@@ -34,49 +137,115 @@ class DicomFinder(threading.Thread):
         self.alive = False
 
     def run(self):
-        #find_cmd_str = 'find %s -type f -newermt "%s"'
-        find_cmd_str = 'find %s -type f'
-        series_dir_cmd = 'find %s -mindepth 1 -maxdepth 1 -exec stat -c "%%Y;%%n" {} +' % self.exam_dir
-        #hist_len = int((2 * QUANTIZATION_CORRECTION.seconds / self.interval.total_seconds()) + 0.5)
-        #history = collections.deque([set() for i in range(hist_len)], maxlen=hist_len)
-        last_check = datetime.datetime.now()
-        filenames_dict = {}
+        files_dict = {}
         while self.alive:
-            all_series_dirs = subprocess.check_output(shlex.split(series_dir_cmd), stderr=subprocess.STDOUT).split()
-            all_series_dirs = dict([ex.split(';') for ex in all_series_dirs])
-            series_dir = all_series_dirs[max(all_series_dirs)]
+            before_check = datetime.datetime.now()
+            series_path = max(glob.glob(os.path.join(exam_path, 's*')), key=lambda d: os.stat(d).st_mtime)
+            current_files = os.listdir(series_path)
+            new_files = set(current_files) - files_dict.setdefault(series_path, set())
+            for filename in new_files.copy():
+                try:
+                    dcm = dicom.read_file(os.path.join(series_path, filename))
+                    if not len(dcm.PixelData) == 2 * dcm.Rows * dcm.Columns:
+                        raise Exception
+                except:
+                    new_files.remove(filename)  # try this one again next time
+                else:
+                    self.dicom_q.put(dcm)
+            files_dict[series_path] |= new_files
 
-            this_check = datetime.datetime.now()
-            #find_cmd = find_cmd_str % (series_dir, last_check-QUANTIZATION_CORRECTION)
-            find_cmd = find_cmd_str % (series_dir)
-
-            try:
-                #find_out = subprocess.check_output(shlex.split(find_cmd), stderr=subprocess.STDOUT).split()
-                find_out = [os.path.join(series_dir, d) for d in os.listdir(series_dir)]
-            except subprocess.CalledProcessError:
-                print 'Error while checking for new files'
-            else:
-                last_check = this_check
-                #filenames = set(find_out) - set.union(*history)
-                filenames = set(find_out) - filenames_dict.setdefault(series_dir, set())
-                for filename in filenames.copy():
-                    try:
-                        dcm = dicom.read_file(filename)
-                        if not len(dcm.PixelData) == 2 * dcm.Rows * dcm.Columns:
-                            raise Exception
-                    except:
-                        filenames.remove(filename)  # try this one again next time
-                    else:
-                        #print ' dicom %5s in' % dcm.InstanceNumber
-                        print filename
-                        self.dicom_q.put(dcm)
-                #history.append(filenames)
-                filenames_dict[series_dir] |= filenames
-
-            sleeptime = (this_check + self.interval - datetime.datetime.now()).total_seconds()
-            print '%4d (%3d): %s (%f)' % (len(filenames_dict[series_dir]), len(filenames), last_check, sleeptime)
+            sleeptime = (before_check + self.interval - datetime.datetime.now()).total_seconds()
+            print '%s: %4d (%3d) [%f]' % (os.path.basename(series_path), len(files_dict[series_path]), len(new_files), sleeptime)
             if sleeptime > 0:
                 time.sleep(sleeptime)
+                
+           
+           
+                
+class IncrementalDicomFinder(threading.Thread):
+
+	
+	def __init__(self, series_path, dicom_queue, interval):
+		super(IncrementalDicomFinder, self).__init__()
+		self.series_path = series_path
+		self.dicom_queue = dicom_queue
+		self.interval = interval
+		self.alive = True
+		self.slice_bin = 0
+		self.slice_num = 0
+		self.filenames = []
+		self.dicom_str_template = ''
+		
+		
+	def halt(self):
+		self.alive = False
+		
+		
+	def get_initial_filelist(self):
+		files = os.listdir(self.series_path)
+		print files
+		if files:
+			for file in files:
+				spl = file.split('.')
+				dicom_num = int(spl[-2])
+				bin = int(spl[-3])
+				self.template = '.'.join(spl[:-3])
+				if bin >= self.slice_bin:
+				    if bin > self.slice_bin:
+				        self.slice_bin = bin
+				        self.slice_num = 0
+				    if dicom_num > self.slice_num:
+				        self.slice_num = dicom_num
+			return [os.path.join(self.series_path, fid) for fid in files]
+		else:
+			return False
+			
+			
+				     
+	def increment_dicom(self):
+		if self.slice_num == 999:
+			self.slice_num = 1
+			self.slice_bin += 1
+		else:
+			self.slice_num += 1
+	
+		nextfile = os.path.join(self.series_path, '.'.join(self.template, str(self.series_bin), str(self.slice_num), 'dcm'))
+		self.filenames.insert(0, nextfile)
+    
+		
+		
+	def run(self):
+		take_a_break = False
+		while self.alive:
+			before_check = datetime.datetime.now()
+			if self.slice_bin == 0:
+				self.filenames = self.get_initial_filelist()
+			elif take_a_break:
+				sleeptime = (before_check + self.interval - datetime.datetime.now()).total_seconds())
+            	print '%s: %d (%d) [%f]' % (os.path.basename(self.series_path), self.slice_bin, self.slice_num, sleeptime)
+				if sleeptime > 0:
+		            time.sleep(sleeptime)
+			else:
+				if not self.filenames:
+					self.increment_dicom()
+				current_filename = self.filenames.pop()
+				try:
+	                dcm = dicom.read_file(current_filename)
+	                if not len(dcm.PixelData) == 2 * dcm.Rows * dcm.Columns:
+	                    raise Exception
+	            except:
+	                self.filenames.insert(0, current_filename)  # try this one again next time
+	                take_a_break = True
+	            else:
+	                self.dicom_q.put(dcm)
+	                self.increment_dicom()
+	                take_a_break = False
+
+        		
+		
+	
+	
+		
 
 
 class Volumizer(threading.Thread):
@@ -93,6 +262,9 @@ class Volumizer(threading.Thread):
         self.alive = False
 
     def run(self):
+        volume_shape = None
+        dicoms = {}
+        complete_volumes = 0
         while self.alive:
             try:
                 dcm = self.dicom_q.get(timeout=1)
@@ -100,8 +272,22 @@ class Volumizer(threading.Thread):
                 pass
             else:
                 # TODO: convert incoming dicoms to 3D volumes
-                volume = dcm
-                self.volume_q.put(volume)
+                dicom = dwrap.wrapper_from_data(dcm)
+                if not AFFINE:
+                   AFFINE = dicom.get_affine()
+                if not volume_size:
+                    volume_shape = (SLICES_PER_VOLUME,dicom.image_shape[1],
+                                    dicom.image_shape[2])
+                dicoms[dicom.instance_number] = dicom
+                check_start = complete_volumes*SLICES_PER_VOLUME
+                check_end = check_start+SLICES_PER_VOLUME
+                if all([(ind in dicoms) for ind in range(check_start,check_end)]):
+                    volume = np.zeros(volume_shape)
+                    for i in range(check_start,check_end):
+                        volume[i] = dicoms[i].get_data()
+                    self.volume_q.put(volume)
+                    complete_volumes += 1
+                    
 
 
 class Analyzer(threading.Thread):
@@ -112,11 +298,14 @@ class Analyzer(threading.Thread):
         super(Analyzer, self).__init__()
         self.volume_q = volume_q
         self.alive = True
+        self.whole_brain = None
 
     def halt(self):
         self.alive = False
 
     def run(self):
+        vol_shape = None
+        next_vol = 0
         while self.alive:
             try:
                 volume = self.volume_q.get(timeout=1)
@@ -124,17 +313,28 @@ class Analyzer(threading.Thread):
                 pass
             else:
                 # TODO: append to 4D volume
-                pass
+                if not brain_shape:
+                    vol_shape = np.shape(volume)
+                if not self.whole_brain:
+                    self.whole_brain = np.zeros(1,vol_shape[0],vol_shape[1],
+                                                vol_shape[2])
+                    self.whole_brain[0] = volume
+                    next_vol = 1
+                else:
+                    self.whole_brain.resize((next_vol+1,vol_shape[0],vol_shape[1],
+                                             vol_shape[2]))
+                    self.whole_brain[next_vol] = volume
+                    next_vol += 1
+                
 
 
 class ArgumentParser(argparse.ArgumentParser):
 
     def __init__(self):
-        super(ArgumentParser, self).__init__()
-        self.description = """
-            Facilitate real-time fMRI.
-            """
-        self.add_argument('dicom_dir', help='path to dicom root directory')
+        super(ArgumentParser, self).__init__(formatter_class=argparse.RawTextHelpFormatter)
+        self.description  = 'Facilitate real-time fMRI.\n\n'
+        self.description += 'Use NFS mount options "noac,lookupcache=none" to avoid client-side caching.'
+        self.add_argument('dicom_path', help='path to dicom root directory')
         self.add_argument('-i', '--interval', type=float, default=1.0, help='interval between checking for new files')
 
 
@@ -144,13 +344,26 @@ if __name__ == '__main__':
     dicom_q = queue.Queue()
     volume_q = queue.Queue()
 
-    exam_dir_cmd = 'find %s -mindepth 2 -maxdepth 2 -exec stat -c "%%Y;%%n" {} +' % args.dicom_dir
-    all_exam_dirs = subprocess.check_output(shlex.split(exam_dir_cmd), stderr=subprocess.STDOUT).split()
-    all_exam_dirs = dict([ex.split(';') for ex in all_exam_dirs])
-    exam_dir = all_exam_dirs[max(all_exam_dirs)]
+    #exam_path = max(glob.glob(os.path.join(args.dicom_path, 'p*/e*')), key=lambda d: os.stat(d).st_mtime)
 
-    dicom_finder = DicomFinder(exam_dir, dicom_q, datetime.timedelta(seconds=args.interval))
+    #dicom_finder = DicomFinder(exam_path, dicom_q, datetime.timedelta(seconds=args.interval))
+    
+	utils = Utilities()
+	
+	[scan_top_dir,all_dirs] = utils.calibration(False)
+	print all_dirs
+	print scan_top_dir
+	
+	go = raw_input('Hit it when ya ready:')
+	
+	enter_dir = utils.enternewdirectory(scan_top_dir,all_dirs,200.0)
+	
+	print enter_dir
+    
+    dicom_finder = IncrementalDicomFinder(enter_dir, dicom_q, datetime.timedelta(seconds=args.interval))
+    
     volumizer = Volumizer(dicom_q, volume_q)
+    
     analyzer = Analyzer(volume_q)
 
     def term_handler(signum, stack):
