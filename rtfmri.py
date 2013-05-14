@@ -17,49 +17,39 @@ import random
 import re
 from socket import *
 
-
 import numpy as np
 import dicom
 import nibabel as nib
 from nibabel.nicom import dicomreaders as dread
 from nibabel.nicom import dicomwrappers as dwrap
 
-
-
 SLICES_PER_VOLUME = 32
 AFFINE = None
 CNI_TOP_DIR = '/net/cnimr/export/home1/sdc_image_pool/images/'
 
-
-
 class Utilities(object):
-
 
 	def __init__(self, dicom_prefix='i*'):
 		self.server_dir = CNI_TOP_DIR
 		self.slices = SLICES_PER_VOLUME
-		
-			
+
 	def findrecentdir(self):
 		all_dirs = [dir for dir in os.listdir('.') if os.path.isdir(dir)]
 		if all_dirs:
 			last_mod = max((os.path.getmtime(dir),dir) for dir in all_dirs)[1]
 			return last_mod
-		else: 
+		else:
 			return False
-			
-			
+
 	def erase_realtimedir(self):
 		if os.path.exists(self.realtime_dir):
 			shutil.rmtree(self.realtime_dir)
 		os.mkdir(self.realtime_dir)
-		
-		
+
 	def erase_waitingroom(self):
 		if os.path.exists(self.waitingroom):
 			shutil.rmtree(self.waitingroom)
 		os.mkdir(self.waitingroom)
-		
 
 	def navigatedown(self):
 		os.chdir(self.server_dir)
@@ -74,7 +64,6 @@ class Utilities(object):
 				current_dir = sub_dir
 		return os.getcwd()
 
-
 	def calibration(self,copyflag):
 		most_recent_dir = self.navigatedown()
 		os.chdir('../')
@@ -82,7 +71,6 @@ class Utilities(object):
 			plaincopy(directory=most_recent_dir,exclude=[],destination='calibration')
 		all_dirs = [dir for dir in os.listdir('.') if os.path.isdir(dir)]
 		return [os.getcwd(),all_dirs]
-		
 
 	def enternewdirectory(self,rootdir,exceptions,waittime):
 		os.chdir(rootdir)
@@ -94,20 +82,13 @@ class Utilities(object):
 				os.chdir(recent_dir)
 				return os.getcwd()
 		return False
-		
-	
+
 	def dicom_header_reader(dicom_file):
 		start_time = time.time()
 		file_data = dicom.read_file(dicom_file)
 		print file_data.AcquisitionNumber
 		end_time = time.time()
 		print end_time-start_time
-
-
-
-
-
-
 
 
 class DicomFinder(threading.Thread):
@@ -146,13 +127,10 @@ class DicomFinder(threading.Thread):
             print '%s: %4d (%3d) [%f]' % (os.path.basename(series_path), len(files_dict[series_path]), len(new_files), sleeptime)
             if sleeptime > 0:
                 time.sleep(sleeptime)
-                
-           
-           
-                
+
+
 class IncrementalDicomFinder(threading.Thread):
 
-	
 	def __init__(self, series_path, dicom_queue, interval):
 		super(IncrementalDicomFinder, self).__init__()
 		self.series_path = series_path
@@ -163,12 +141,10 @@ class IncrementalDicomFinder(threading.Thread):
 		self.dicom_nums = []
 		self.dicom_search_start = 0
 		print 'initialized'
-		
-		
+
 	def halt(self):
 		self.alive = False
-		
-		
+
 	def get_initial_filelist(self):
 		time.sleep(0.1)
 		files = os.listdir(self.series_path)
@@ -186,43 +162,41 @@ class IncrementalDicomFinder(threading.Thread):
 				self.dicom_search_start = min(gaps)
 			else:
 				self.dicom_search_start = max(self.dicom_nums)+1
-				
-				
+
+
 			return [os.path.join(self.series_path, fid) for fid in files]
 		else:
 			return False
-    
-		
-		
+
 	def run(self):
 		take_a_break = False
 		failures = 0
-		
+
 		while self.alive:
 			#print sorted(self.dicom_nums)
 			#print self.server_inum
 			before_check = datetime.datetime.now()
 			#print before_check
-			
+
 			if self.server_inum == 0:
 				filenames = self.get_initial_filelist()
 				for fid in filenames:
 					dcm = dicom.read_file(fid)
 					self.dicom_queue.put(dcm)
-			
+
 			elif take_a_break:
-				
+
 				#print '%s: (%d) [%f]' % (os.path.basename(self.series_path), self.server_inum, self.interval)
 				time.sleep(self.interval)
 				take_a_break = False
-			
+
 			else:
 				loop_success = False
 				first_failure = False
-				
+
 				ind_tries = [x for x in range(self.dicom_search_start, max(self.dicom_nums)+10) if x not in self.dicom_nums]
 				#print ind_tries
-				
+
 				for d in ind_tries:
 					try:
 						current_filename = 'i'+str(self.server_inum+1)+'.MRDC.'+str(d)
@@ -233,7 +207,7 @@ class IncrementalDicomFinder(threading.Thread):
 							print 'pixeldata: '+str(len(dcm.PixelData))
 							print 'expected: '+str(2*dcm.Rows*dcm.Columns)
 							raise Exception
-					
+
 					except:
 						#print current_filename+', failed attempt'
 						if not first_failure:
@@ -247,18 +221,12 @@ class IncrementalDicomFinder(threading.Thread):
 						self.server_inum += 1
 						loop_success = True
 						failures = 0
-				
+
 				if not loop_success:
 					#print 'failure on: i'+str(self.server_inum+1)+'\n'
 					refresher = glob.glob('i'+str(self.server_inum+1)+'*')
 					#failures = failures+1
 					take_a_break = True
-
-        		
-		
-	
-	
-		
 
 
 class Volumizer(threading.Thread):
@@ -280,7 +248,7 @@ class Volumizer(threading.Thread):
         volume_shape = None
         dicoms = {}
         complete_volumes = 0
-        
+
         base_time = time.time()
         while self.alive:
             try:
@@ -309,9 +277,6 @@ class Volumizer(threading.Thread):
                     nib.save(volimg,'/home/cni/Desktop/kiefer/volume.nii')
                     print time.time()-base_time
                     base_time = time.time()
-        
-                    
-
 
 class Analyzer(threading.Thread):
 
@@ -356,7 +321,7 @@ class Analyzer(threading.Thread):
                     self.whole_brain[:,:,:,0] = volume
                     next_vol = 1
                 else:
-              
+
                 	#self.whole_brain  = np.zeros((vol_shape[0],vol_shape[1],vol_shape[2],next_vol+1))
                     #self.whole_brain.resize(vol_shape[0],vol_shape[1],vol_shape[2],next_vol+1)
                     self.whole_brain[:,:,:,next_vol] = volume
@@ -370,25 +335,22 @@ class Analyzer(threading.Thread):
 
         #image_save = nib.nifti1.Nifti1Image(self.whole_brain, AFFINE)
 		#nib.nifti1.save(image_save,')
-                
 
 
-
-class NeurofeedbackSocket(threading.Thread):
 
 	def __init__(self, average_q, parameter_file):
         super(Analyzer, self).__init__()
         self.average_q = average_q
         self.alive = True
-        
+
         self.act = [].insert(0,0)
         self.count = 0
         self.trial = 0
         self.message, self.colors, self.onsets = [], [], []
         self.setup_parameters(parameter_file)
-        
+
         self.setup_socket()
-        
+
   	def setup_parameters(self, parameter_file):
   		self.params = open(paramfileName).read().split('\n')
 		self.tmp = params[0].split(' ')
@@ -396,17 +358,17 @@ class NeurofeedbackSocket(threading.Thread):
 		self.tmp = params[1].split(' ')
 		self.waitTime = int(tmp[0])
 		self.nEvent = int(params[3])
-	
+
 		for i in range(nEvent):
 			self.cur = self.params[4 + i].split(' ')
 			self.onsets.insert(i + 1, int(self.cur[0]))
 			self.colors.insert(i, ";" + self.cur[1] + ";" + self.cur[2] + ";" + self.cur[3] +";")
 			self.tmp = self.cur[4]
 			self.message.insert(i, self.tmp[2:-1])
-	
+
 		self.onsets.insert(i + 1, self.onsets[i] + 1)
-		
-	
+
+
 	def setup_socket(self):
 		self.serverHost = 'localhost'
 		self.serverPort = 8888
@@ -416,13 +378,13 @@ class NeurofeedbackSocket(threading.Thread):
 		print "waiting for display connection..."
 		self.conn, self.addr = self.sock.accept()
 		print "got it!"
-	
-        
+
+
     def halt(self):
     	self.alive = False
     	self.conn.close()
     	self.sock.close()
-    	
+
     def run(self):
     	self.conn.send("n " + str(self.nTR - self.waitTime + 1) + "\n")
     	while self.alive:
@@ -437,18 +399,15 @@ class NeurofeedbackSocket(threading.Thread):
 					self.conn.send("c " + self.colors[self.trial] + "\n")
 					self.conn.send("d " + str(self.onsets[self.trial + 1] - self.onsets[self.trial]) + "\n")
 					self.trial = self.trial + 1
-					
+
 				curAct = "a "+str(average) +"\n"
 				dummyglobal = "g 0.01\n"
 				print 'act: ', curAct
 				self.conn.send(curAct)
 				self.conn.send(dummyglobal)
-				
+
 			self.act.insert(count+1,0)
 			self.count = self.count+1
-			
-			
-
 
 class ArgumentParser(argparse.ArgumentParser):
 
@@ -459,15 +418,12 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument('dicom_path', help='path to dicom root directory')
         self.add_argument('-i', '--interval', type=float, default=1.0, help='interval between checking for new files')
 
-
 def load_mask_nifti(nifti):
 	image = nib.load(nifti)
 	shape = image.get_shape()
 	idata = image.get_data()
 	affine = image.get_affine()
 	return [idata,affine,shape]
-
-
 
 if __name__ == '__main__':
 	#args = ArgumentParser().parse_args()
@@ -479,16 +435,16 @@ if __name__ == '__main__':
 	#exam_path = max(glob.glob(os.path.join(args.dicom_path, 'p*/e*')), key=lambda d: os.stat(d).st_mtime)
 
 	#dicom_finder = DicomFinder(exam_path, dicom_q, datetime.timedelta(seconds=args.interval))
-    
+
 	utils = Utilities()
-	
+
 	mask_name = raw_input('name of mask file: ')
 	import glob
 	mask_filename = glob.glob(mask_name)[0]
 	if mask_filename:
 		[maskdata,maskaffine,maskshape] = load_mask_nifti(mask_filename)
-		
-		
+
+
 	param_name = raw_input('name of parameter file: ')
 	parameter_file = glob.glob(param_name)[0]
 
@@ -508,7 +464,7 @@ if __name__ == '__main__':
 	volumizer = Volumizer(dicom_q, volume_q)
 
 	analyzer = Analyzer(volume_q, average_q, maskdata, maskshape)
-	
+
 	neurosocket = NeurofeedbackSocket(average_q, parameter_file)
 
 	def term_handler(signum, stack):
@@ -534,5 +490,5 @@ if __name__ == '__main__':
 	neurosocket.start()
 
 	while True: time.sleep(60)  # stick around to receive and process signals
-	
-	
+
+
