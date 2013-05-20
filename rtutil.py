@@ -6,6 +6,11 @@ import sys
 import threading
 import Queue as queue
 import glob
+import BaseHTTPServer
+import json
+from cgi import parse_header, parse_multipart
+from urlparse import parse_qs
+
 import numpy as np
 import dicom
 import nibabel as nib
@@ -52,7 +57,7 @@ class IncrementalDicomFinder(threading.Thread):
     """
     Find new DICOM files in the series_path directory and put them into the dicom_queue.
     """
-    def __init__(self, rtclient, series_path, dicom_queue, interval):
+    def __init__(self, rtclient, series_path, dicom_queue, result_d, interval):
         super(IncrementalDicomFinder, self).__init__()
         self.rtclient = rtclient
         self.series_path = series_path
@@ -65,6 +70,7 @@ class IncrementalDicomFinder(threading.Thread):
         self.exam_num = None
         self.series_num = None
         self.acq_num = None
+        self.result_d = result_d
         print 'initialized'
 
     def halt(self):
@@ -98,6 +104,13 @@ class IncrementalDicomFinder(threading.Thread):
             self.acq_num = int(dcm.AcquisitionNumber)
             self.series_description = dcm.SeriesDescription
             self.patient_id = dcm.PatientID
+            # initialize the results dict
+            self.result_d['exam'] = self.exam_num
+            self.result_d['series'] = self.series_num
+            self.result_d['patient_id'] = self.patient_id
+            self.result_d['series_description'] = self.series_description
+            self.result_d['tr'] = float(dcm.RepetitionTime) / 1000.
+
             if verbose:
                 print('Acquiring dicoms for exam %d, series %d (%s / %s)'
                         % (self.exam_num, self.series_num, self.patient_id, self.series_description))
@@ -171,10 +184,11 @@ class Volumizer(threading.Thread):
     and pushes them onto the volume queue.
     """
 
-    def __init__(self, dicom_q, volume_q, affine=None):
+    def __init__(self, dicom_q, volume_q, result_d, affine=None):
         super(Volumizer, self).__init__()
         self.dicom_q = dicom_q
         self.volume_q = volume_q
+        self.result_d = result_d
         self.alive = True
         self.affine = affine
         self.slices_per_volume = None
@@ -212,7 +226,7 @@ class Volumizer(threading.Thread):
 
                 #print 'put in dicom:' + str(dicom.instance_number)
 
-                # The dicoms instance number should indice where this dicom belongs.
+                # The dicom instance number should indicate where this dicom belongs.
                 # It should start at 1 for the first slice of the first volume, and increment
                 # by 1 for each subsequent slice/volume.
                 start_inst = (self.completed_vols * self.slices_per_volume) + 1
@@ -241,19 +255,13 @@ class Analyzer(threading.Thread):
     Analyzer gets 3D volumes out of the volume queue and computes real-time statistics on them.
     """
 
-    #
-
-    def __init__(self, volume_q, average_q, skip_vols=2):
+    def __init__(self, volume_q, result_d, skip_vols=2):
         super(Analyzer, self).__init__()
         self.volume_q = volume_q
-        self.average_q = average_q
+        self.result_d = result_d
         self.alive = True
-        self.whole_brain = None
-        self.brain_list = []
         self.ref_vol = None
         self.mean_img = 0.
-        self.mc_xform = []
-        self.mean_displacement = []
         self.max_displacement = 0.
         self.skip_vols = skip_vols
 
@@ -278,6 +286,7 @@ class Analyzer(threading.Thread):
                         self.ref_vol = volimg
                     else:
                         # compute motion
+                        # TODO: detect 4d datasets. Also check for diffusion scans, and use histogram registration for those.
                         #print "COMPUTING MOTION ON VOLUME #%03d" % vol_num
                         ref = self.ref_vol.get_data()
                         img = volimg.get_data()
@@ -312,10 +321,206 @@ class Analyzer(threading.Thread):
                         # The center of the volume. Assume 0,0,0 in world coordinates.
                         xc = np.matrix((0,0,0)).T
                         mean_disp = np.sqrt( R**2. / 5 * np.trace(A.T * A) + (t + A*xc).T * (t + A*xc) ).item()
-                        self.mean_displacement.append(mean_disp)
+                        self.result_d['mean_displacement'].append(mean_disp)
                         if mean_disp > self.max_displacement:
                             self.max_displacement = mean_disp
-                        self.mc_xform.append(T)
+                        self.result_d['affine'].append(T)
                         print "VOL %03d: mean displacement = %f mm, max displacement = %f mm" % (vol_num, mean_disp, self.max_displacement)
+                else:
+                    # put dummy values in so that we know these volumes were skipped
+                    #print(self.result_d)
+                    self.result_d['mean_displacement'].append(0.)
+                    self.result_d['affine'].append(nipy.algorithms.registration.affine.Affine(np.eye(4)))
+
+
+class Server(threading.Thread):
+    """
+    Delivers results from the analyzer via a little HTTP server.
+    """
+    def __init__(self, result_d, hostname='', port=8080):
+        super(Server, self).__init__()
+        self.result_d = result_d
+        self.hostname = hostname
+        self.port = port
+        self.alive = True
+
+    def halt(self):
+        self.alive = False
+
+    def run(self):
+        httpd = HttpServer((self.hostname, self.port), HttpHandler, self.result_d)
+        print('Starting http server at http://%s:%d/' % (self.hostname, self.port))
+        while self.alive:
+            httpd.handle_request()
+        httpd.server_close()
+
+
+class HttpHandler(BaseHTTPServer.BaseHTTPRequestHandler):
+    """The HTTP handler."""
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+
+    def do_GET(self):
+        """Respond to a GET request."""
+        self.do_HEAD()
+        # Build a nice dict to summarize all the quantitative data
+        # *** WORK HERE
+        #    'time':t*self.server.result_d['tr'], 'd_mean':d,
+        #         't_x':a.translation[0], 't_y':a.translation[1], 't_z':a.translation[2],
+        #         'r_x':a.rotation[0], 'r_y':a.rotation[1], 'r_z':a.rotation[2]}
+        #         for t,a,d in enumerate(zip(self.server.result_d['affine'], self.server.result_d['mean_displacement']))]
+        if self.path.lower() in ['/','/index.html']:
+            self.wfile.write('<html><head><title>CNI MR Real-time Server</title>')
+            # TODO: serve this as a file so the browser will cache it.`
+            with open('plot_head.js') as fp:
+                self.wfile.write(fp.read())
+            self.wfile.write('</head>\n<body>\n')
+            self.wfile.write('<div id="content">\n')
+            self.wfile.write('<h1>%s: Exam %d, Series %d (%s)</h1>\n' %
+                    (self.server.result_d['patient_id'],
+                     self.server.result_d['exam'],
+                     self.server.result_d['series'],
+                     self.server.result_d['series_description']))
+            self.wfile.write('  <div id="chart-container">\n')
+            self.wfile.write('    <div id="chart"></div>\n')
+            self.wfile.write('    <div id="slider"></div>\n')
+            self.wfile.write('  </div>\n')
+            self.wfile.write('</div>\n')
+            with open('plot.js') as fp:
+                self.wfile.write(fp.read())
+            # When "http://host.com/foo/bar/" is hit, self.path equals "/foo/bar/".
+            self.wfile.write("</body></html>\n")
+        elif self.path.lower() in ['/names','/names.json']:
+            self.wfile.write(json.dumps(['Mean Displacement']))
+        elif self.path.lower() in ['/data','/data.json']:
+            # TODO: check for vars start, end, length and return the requested range of samples.
+            self.wfile.write(self.jsonify_result(self.server.result_d))
+
+    def do_POST(self):
+        """Handle a post request."""
+        # test using curl-- see https://httpkit.com/resources/HTTP-from-the-Command-Line/
+        # Or, try:
+        # import httplib, urllib
+        # c = httplib.HTTPConnection("spgr.stanford.edu", port=8080)
+        # c.request("POST", "", urllib.urlencode({'@type':'data', '@start':0, '@end':100}, {"Content-type": "application/x-www-form-urlencoded","Accept": "text/plain"}))
+        # c.getresponse().read()
+        length = int(self.headers['content-length'])
+        postvars = parse_qs(self.rfile.read(length), keep_blank_values=1)
+        self.send_response(200)
+        self.end_headers()
+        if self.path.lower() in ['/test','/test.html']:
+            self.wfile.write(postvars)
+        elif self.path.lower() in ['/names','/names.json']:
+            self.wfile.write(json.dumps(['Mean Displacement']))
+        elif self.path.lower() in ['/data','/data.json']:
+            # TODO: check for vars start, end, lenght and return the requested range of samples.
+            self.wfile.write(self.jsonify_result(self.server.result_d))
+
+    def jsonify_result(self, res):
+        d = [{'name':'Mean Displacement', 'data':[{'x':round(t*res['tr'],3), 'y':round(d,3)} for t,d in enumerate(res['mean_displacement'])]}]
+        return json.dumps(d)
+
+    def timeseries_plot(self):
+        js = ('<!doctype>\n'
+              '<link type="text/css" rel="stylesheet" href="http://code.shutterstock.com/rickshaw/rickshaw.min.css">\n'
+              '<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>\n'
+              '<script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.8.21/jquery-ui.min.js"></script>\n'
+              '<script src="http://d3js.org/d3.v2.js"></script>\n'
+              '<script src="http://code.shutterstock.com/rickshaw/rickshaw.min.js"></script>\n'
+              '<div id="chart-container">\n'
+              '  <div id="graph"></div>\n'
+              '  <div id="legend"></div>\n'
+              '  <div class="clear"></div>\n'
+              '</div>\n'
+              '<script>\n'
+              'var graph;\n'
+              'graph = new Rickshaw.Graph.Ajax( {\n'
+              '  	element: document.getElementById("graph"),\n'
+              '  	width: 800, height: 200, renderer: "line", interpolation: "linear",\n'
+              '  	dataURL: "data.json",\n'
+              '     series: [{name:"Mean Displacement", color:"#c05020"}],\n'
+              '     onComplete: function(transport) {\n'
+              '         var graph = transport.graph;\n'
+              '         var detail = new Rickshaw.Graph.HoverDetail({ graph: graph,\n'
+              '             xFormatter: function(x) { return x + " seconds" },'
+              '             yFormatter: function(y) { return y + " mm" }\n'
+              '         });\n'
+              '         var x_axis = new Rickshaw.Graph.Axis.X({ graph: graph });\n'
+              '         x_axis.graph.update();\n'
+              '         var y_axis = new Rickshaw.Graph.Axis.Y({ graph: graph,\n'
+              '             tickFormat: Rickshaw.Fixtures.Number.formatKMBT,\n'
+              '         });\n'
+              '         y_axis.graph.update();\n'
+              '     }\n'
+              '} );\n'
+              '</script>\n'
+              '<style type="text/css">\n'
+              '  /*<![CDATA[*/\n'
+              '    #chart-container { width: 1000px; margin: auto; margin-top: 100px }\n'
+              '    #graph { float: left; }\n'
+              '    #legend { float: right; }\n'
+              '    .clear { clear: both; }\n'
+              '  /*]]>*/\n'
+              '</style>\n')
+        return js
+
+    def timeseries_plot_full(self):
+        js = ('<!doctype>\n'
+              '<link type="text/css" rel="stylesheet" href="http://code.shutterstock.com/rickshaw/rickshaw.min.css">\n'
+              '<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>\n'
+              '<script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.8.21/jquery-ui.min.js"></script>\n'
+              '<script src="http://d3js.org/d3.v2.js"></script>\n'
+              '<script src="http://code.shutterstock.com/rickshaw/rickshaw.min.js"></script>\n'
+              '<script type="text/javascript">\n'
+              'var palette = new Rickshaw.Color.Palette();'
+              'var series = []\n'
+              '$.post("names.json", function(d) {\n'
+              '  d.forEach(function(s) { series.push({ name: s, color: palette.color(s) }); });\n'
+              '  var ajaxGraph = new Rickshaw.Graph.Ajax( {\n'
+              '  	element: document.getElementById("graph"),\n'
+              '  	width: 800, height: 500, renderer: "line",'
+              '  	dataURL: "data.json", series: series,\n'
+              '  	onData: function(d) { Rickshaw.Series.zeroFill(d); return d; },\n'
+              '  	onComplete: function(transport) {\n'
+              '  	  var graph = transport.graph;\n'
+              '  	  var detail = new Rickshaw.Graph.HoverDetail({ graph: graph,\n'
+              '  	    xFormatter: function(x) { return x.toFixed(2) },\n'
+              '  	    yFormatter: function(y) { return y.toFixed(2) }\n'
+              '  	  });\n'
+              '  	 var legend = new Rickshaw.Graph.Legend({ graph: graph, element: document.querySelector("#legend") });\n'
+              '      var shelving = new Rickshaw.Graph.Behavior.Series.Toggle({ graph: graph, legend: legend });\n'
+              '      var highlighter = new Rickshaw.Graph.Behavior.Series.Highlight({ graph: graph, legend: legend });\n'
+              '      var yAxis = new Rickshaw.Graph.Axis.Y({ graph: graph, tickFormat: function(y) { return (y).toFixed(2) } });\n'
+              '      yAxis.render();\n'
+              '  	}\n'
+              '  } );\n'
+              '}, "json");\n'
+              '</script>\n'
+              '<div id="chart-container">\n'
+              '  <div id="graph"></div>\n'
+              '  <div id="legend"></div>\n'
+              '  <div class="clear"></div>\n'
+              '</div>\n'
+              '<style type="text/css">\n'
+              '  /*<![CDATA[*/\n'
+              '    #chart-container { width: 1000px; margin: auto; margin-top: 100px }\n'
+              '    #graph { float: left; }\n'
+              '    #legend { float: right; }\n'
+              '    .clear { clear: both; }\n'
+              '  /*]]>*/\n'
+              '</style>\n')
+        return js
+
+class HttpServer(BaseHTTPServer.HTTPServer):
+    """
+    Subclass the HTTPServer so that we can pass the results dict to the handler (as self.server.results_d).
+    """
+    def __init__(self, hostport, handler, result_d):
+        BaseHTTPServer.HTTPServer.__init__(self, hostport, handler)
+        self.result_d = result_d
+
 
 
