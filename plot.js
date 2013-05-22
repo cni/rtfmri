@@ -10,16 +10,16 @@ graph = new Rickshaw.Graph.Ajax( {
              {name:"Translation_X", color:"#a04020"},
              {name:"Translation_Y", color:"#c06030"},
              {name:"Translation_Z", color:"#e08040"},
-             {name:"Rotation_X", color:"#2080c0"},
-             {name:"Rotation_Y", color:"#20a0d0"},
-             {name:"Rotation_Z", color:"#20c0e0"}],
+             {name:"Rotation_X", color:"#2080c0", yFormatter: function(y) { return y + " deg" }},
+             {name:"Rotation_Y", color:"#20a0d0", yFormatter: function(y) { return y + " deg" }},
+             {name:"Rotation_Z", color:"#20c0e0", yFormatter: function(y) { return y + " deg" }}],
     onComplete: function(transport) {
         var graph = transport.graph;
 
         var detail = new Rickshaw.Graph.HoverDetail({
             graph: graph,
             xFormatter: function(x) { return x + " seconds" },
-            yFormatter: function(y) { return y + " mm/deg" },
+            yFormatter: function(y) { return y + " mm" },
         });
 
         var x_axis = new Rickshaw.Graph.Axis.X({
@@ -68,6 +68,7 @@ var iv = setInterval( function() {
     // Stop polling if we haven't received any data in a while.
     if (num_appended==0) num_tries++;
     //if (num_tries>10) clearInterval(iv);
+    //console.log(num_tries);
 }, update_interval );
 
 </script>

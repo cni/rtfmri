@@ -432,13 +432,13 @@ class HttpHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         md = res['mean_displacement'][start_ind:]
         transrot = [t.translation.tolist() + (t.rotation/3.14*180.).tolist() for t in res['affine'][start_ind:]]
         # TODO: While elegant in some ways, this code seems highly inefficient. There must be a better way...
-        d = [{'name':'Mean Displacement', 'data':[{'x':round((t+start_ind)*res['tr'],3), 'y':round(d,3)} for t,d in enumerate(md)]},
-             {'name':'Translation_X', 'data':[{'x':round((t+start_ind)*res['tr'],3), 'y':round(r[0],3)} for t,r in enumerate(transrot)]},
-             {'name':'Translation_Y', 'data':[{'x':round((t+start_ind)*res['tr'],3), 'y':round(r[1],3)} for t,r in enumerate(transrot)]},
-             {'name':'Translation_Z', 'data':[{'x':round((t+start_ind)*res['tr'],3), 'y':round(r[2],3)} for t,r in enumerate(transrot)]},
-             {'name':'Rotation_X', 'data':[{'x':round((t+start_ind)*res['tr'],3), 'y':round(r[3],3)} for t,r in enumerate(transrot)]},
-             {'name':'Rotation_Y', 'data':[{'x':round((t+start_ind)*res['tr'],3), 'y':round(r[4],3)} for t,r in enumerate(transrot)]},
-             {'name':'Rotation_Z', 'data':[{'x':round((t+start_ind)*res['tr'],3), 'y':round(r[5],3)} for t,r in enumerate(transrot)]}]
+        d = [{'name':'Mean Displacement', 'unitY':'mm', 'data':[{'x':round((t+start_ind)*res['tr'],3), 'y':round(d,3)} for t,d in enumerate(md)]},
+             {'name':'Translation_X', 'unitY':'mm', 'data':[{'x':round((t+start_ind)*res['tr'],3), 'y':round(r[0],3)} for t,r in enumerate(transrot)]},
+             {'name':'Translation_Y', 'unitY':'mm', 'data':[{'x':round((t+start_ind)*res['tr'],3), 'y':round(r[1],3)} for t,r in enumerate(transrot)]},
+             {'name':'Translation_Z', 'unitY':'mm', 'data':[{'x':round((t+start_ind)*res['tr'],3), 'y':round(r[2],3)} for t,r in enumerate(transrot)]},
+             {'name':'Rotation_X', 'unitY':'deg', 'data':[{'x':round((t+start_ind)*res['tr'],3), 'y':round(r[3],3)} for t,r in enumerate(transrot)]},
+             {'name':'Rotation_Y', 'unitY':'deg', 'data':[{'x':round((t+start_ind)*res['tr'],3), 'y':round(r[4],3)} for t,r in enumerate(transrot)]},
+             {'name':'Rotation_Z', 'unitY':'deg', 'data':[{'x':round((t+start_ind)*res['tr'],3), 'y':round(r[5],3)} for t,r in enumerate(transrot)]}]
         return json.dumps(d)
 
 
