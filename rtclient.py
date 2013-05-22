@@ -56,9 +56,27 @@ class RTClient():
         # The exam dir is exactly 2 layers deep:
         return self.latest_dir(self.latest_dir(self.image_dir))
 
-    def series_dir(self):
+    def series_dirs(self, exam_dir=None):
+        """
+        Returns a dictionary of files in exam_dir, with timestamps as keys.
+        Basically a thin wrapper around listdir, but removes the file size and
+        makes each entry a full file path.
+        """
         self.connect()
-        return self.latest_dir(self.exam_dir())
+        if not exam_dir:
+            exam_dir = self.exam_dir()
+        file_dict = self.listdir(exam_dir)
+        all_series = {}
+        if file_dict:
+            for k in file_dict:
+                all_series[k] = os.path.join(exam_dir, file_dict[k][1])
+        return all_series
+
+    def series_dir(self, exam_dir=None):
+        self.connect()
+        if not exam_dir:
+            exam_dir = self.exam_dir()
+        return self.latest_dir(exam_dir)
 
     def get_file_list(self, series_dir):
         # If we need to worry about partial files, then we should use listdir and check file sizes.

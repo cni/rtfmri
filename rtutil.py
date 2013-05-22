@@ -57,7 +57,7 @@ class IncrementalDicomFinder(threading.Thread):
     """
     Find new DICOM files in the series_path directory and put them into the dicom_queue.
     """
-    def __init__(self, rtclient, series_path, dicom_queue, result_d, interval):
+    def __init__(self, rtclient, series_path, dicom_queue, result_d, interval=0.5):
         super(IncrementalDicomFinder, self).__init__()
         self.rtclient = rtclient
         self.series_path = series_path
@@ -123,8 +123,6 @@ class IncrementalDicomFinder(threading.Thread):
 
 
     def run(self):
-        take_a_break = False
-        failures = 0
 
         while self.alive:
             #print sorted(self.dicom_nums)
@@ -138,15 +136,9 @@ class IncrementalDicomFinder(threading.Thread):
                     dcm = self.rtclient.get_dicom(fn)
                     if self.check_dcm(dcm):
                         self.dicom_queue.put(dcm)
-            elif take_a_break:
-                #print '%s: (%d) [%f]' % (os.path.basename(self.series_path), self.server_inum, self.interval)
-                time.sleep(self.interval)
-                take_a_break = False
             else:
-                loop_success = False
                 first_failure = False
                 ind_tries = [x for x in range(self.dicom_search_start, max(self.dicom_nums)+10) if x not in self.dicom_nums]
-                #print ind_tries
                 for d in ind_tries:
                     try:
                         current_filename = 'i'+str(self.server_inum+1)+'.MRDC.'+str(d)
@@ -168,14 +160,7 @@ class IncrementalDicomFinder(threading.Thread):
                             self.dicom_queue.put(dcm)
                         self.dicom_nums.append(d)
                         self.server_inum += 1
-                        loop_success = True
-                        failures = 0
-
-                if not loop_success:
-                    #print 'failure on: i'+str(self.server_inum+1)+'\n'
-                    refresher = glob.glob('i'+str(self.server_inum+1)+'*')
-                    #failures = failures+1
-                    take_a_break = True
+                    time.sleep(self.interval)
 
 
 class Volumizer(threading.Thread):
@@ -358,21 +343,28 @@ class Server(threading.Thread):
 class HttpHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     """The HTTP handler."""
 
-    def do_HEAD(self):
+    def do_HEAD(self, mime_type="text/html"):
         self.send_response(200)
-        self.send_header("Content-type", "text/html")
+        self.send_header("Content-type", mime_type)
         self.end_headers()
 
     def do_GET(self):
         """Respond to a GET request."""
-        self.do_HEAD()
         # Build a nice dict to summarize all the quantitative data
         # *** WORK HERE
         #    'time':t*self.server.result_d['tr'], 'd_mean':d,
         #         't_x':a.translation[0], 't_y':a.translation[1], 't_z':a.translation[2],
         #         'r_x':a.rotation[0], 'r_y':a.rotation[1], 'r_z':a.rotation[2]}
         #         for t,a,d in enumerate(zip(self.server.result_d['affine'], self.server.result_d['mean_displacement']))]
-        if self.path.lower() in ['/','/index.html']:
+        path = self.path.lower()
+        if '?' in path:
+            path, tmp = path.split('?', 1)
+            qs = parse_qs(tmp)
+        else:
+            qs = None
+
+        if path in ['/','/index.html']:
+            self.do_HEAD()
             self.wfile.write('<html><head><title>CNI MR Real-time Server</title>')
             # TODO: serve this as a file so the browser will cache it.`
             with open('plot_head.js') as fp:
@@ -388,16 +380,33 @@ class HttpHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             self.wfile.write('    <div id="chart"></div>\n')
             self.wfile.write('    <div id="slider"></div>\n')
             self.wfile.write('  </div>\n')
+            self.wfile.write('<div id="legend"></div>\n')
             self.wfile.write('</div>\n')
             with open('plot.js') as fp:
                 self.wfile.write(fp.read())
-            # When "http://host.com/foo/bar/" is hit, self.path equals "/foo/bar/".
             self.wfile.write("</body></html>\n")
-        elif self.path.lower() in ['/names','/names.json']:
-            self.wfile.write(json.dumps(['Mean Displacement']))
-        elif self.path.lower() in ['/data','/data.json']:
-            # TODO: check for vars start, end, length and return the requested range of samples.
-            self.wfile.write(self.jsonify_result(self.server.result_d))
+
+        elif path.startswith('/pub/'):
+            # TODO: detect the appropriate mime type
+            self.do_HEAD(mime_type="application/javascript")
+            filename = os.path.join('pub', path[5:])
+            if os.path.isfile(filename):
+                with open(filename) as fp:
+                    self.wfile.write(fp.read())
+
+        elif path in ['/names','/names.json']:
+            self.do_HEAD(mime_type="application/json")
+            self.wfile.write(json.dumps(['Mean Displacement',
+                'Translation_X', 'Translation_Y', 'Translation_Z',
+                'Rotation_X', 'Rotation_Y', 'Rotation_Z']))
+
+        elif path in ['/data','/data.json']:
+            if qs and 'start' in qs:
+                start_ind = max(0, int(qs['start'][0]))
+            else:
+                start_ind = 0
+            self.do_HEAD(mime_type="application/json")
+            self.wfile.write(self.jsonify_result(self.server.result_d, start_ind))
 
     def do_POST(self):
         """Handle a post request."""
@@ -408,111 +417,26 @@ class HttpHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         # c.request("POST", "", urllib.urlencode({'@type':'data', '@start':0, '@end':100}, {"Content-type": "application/x-www-form-urlencoded","Accept": "text/plain"}))
         # c.getresponse().read()
         length = int(self.headers['content-length'])
-        postvars = parse_qs(self.rfile.read(length), keep_blank_values=1)
+        qs = parse_qs(self.rfile.read(length), keep_blank_values=1)
         self.send_response(200)
         self.end_headers()
         if self.path.lower() in ['/test','/test.html']:
             self.wfile.write(postvars)
-        elif self.path.lower() in ['/names','/names.json']:
-            self.wfile.write(json.dumps(['Mean Displacement']))
-        elif self.path.lower() in ['/data','/data.json']:
-            # TODO: check for vars start, end, lenght and return the requested range of samples.
-            self.wfile.write(self.jsonify_result(self.server.result_d))
 
-    def jsonify_result(self, res):
-        d = [{'name':'Mean Displacement', 'data':[{'x':round(t*res['tr'],3), 'y':round(d,3)} for t,d in enumerate(res['mean_displacement'])]}]
+    def jsonify_result(self, res, start_ind=0):
+        start_ind = max(0, start_ind)
+        md = res['mean_displacement'][start_ind:]
+        transrot = [t.translation.tolist() + t.rotation.tolist() for t in res['affine'][start_ind:]]
+        # TODO: While elegant in some ways, this code seems highly inefficient. There must be a better way...
+        d = [{'name':'Mean Displacement', 'data':[{'x':round((t+start_ind)*res['tr'],3), 'y':round(d,3)} for t,d in enumerate(md)]},
+             {'name':'Translation_X', 'data':[{'x':round((t+start_ind)*res['tr'],3), 'y':round(r[0],3)} for t,r in enumerate(transrot)]},
+             {'name':'Translation_Y', 'data':[{'x':round((t+start_ind)*res['tr'],3), 'y':round(r[1],3)} for t,r in enumerate(transrot)]},
+             {'name':'Translation_Z', 'data':[{'x':round((t+start_ind)*res['tr'],3), 'y':round(r[2],3)} for t,r in enumerate(transrot)]},
+             {'name':'Rotation_X', 'data':[{'x':round((t+start_ind)*res['tr'],3), 'y':round(r[3],3)} for t,r in enumerate(transrot)]},
+             {'name':'Rotation_Y', 'data':[{'x':round((t+start_ind)*res['tr'],3), 'y':round(r[4],3)} for t,r in enumerate(transrot)]},
+             {'name':'Rotation_Z', 'data':[{'x':round((t+start_ind)*res['tr'],3), 'y':round(r[5],3)} for t,r in enumerate(transrot)]}]
         return json.dumps(d)
 
-    def timeseries_plot(self):
-        js = ('<!doctype>\n'
-              '<link type="text/css" rel="stylesheet" href="http://code.shutterstock.com/rickshaw/rickshaw.min.css">\n'
-              '<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>\n'
-              '<script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.8.21/jquery-ui.min.js"></script>\n'
-              '<script src="http://d3js.org/d3.v2.js"></script>\n'
-              '<script src="http://code.shutterstock.com/rickshaw/rickshaw.min.js"></script>\n'
-              '<div id="chart-container">\n'
-              '  <div id="graph"></div>\n'
-              '  <div id="legend"></div>\n'
-              '  <div class="clear"></div>\n'
-              '</div>\n'
-              '<script>\n'
-              'var graph;\n'
-              'graph = new Rickshaw.Graph.Ajax( {\n'
-              '  	element: document.getElementById("graph"),\n'
-              '  	width: 800, height: 200, renderer: "line", interpolation: "linear",\n'
-              '  	dataURL: "data.json",\n'
-              '     series: [{name:"Mean Displacement", color:"#c05020"}],\n'
-              '     onComplete: function(transport) {\n'
-              '         var graph = transport.graph;\n'
-              '         var detail = new Rickshaw.Graph.HoverDetail({ graph: graph,\n'
-              '             xFormatter: function(x) { return x + " seconds" },'
-              '             yFormatter: function(y) { return y + " mm" }\n'
-              '         });\n'
-              '         var x_axis = new Rickshaw.Graph.Axis.X({ graph: graph });\n'
-              '         x_axis.graph.update();\n'
-              '         var y_axis = new Rickshaw.Graph.Axis.Y({ graph: graph,\n'
-              '             tickFormat: Rickshaw.Fixtures.Number.formatKMBT,\n'
-              '         });\n'
-              '         y_axis.graph.update();\n'
-              '     }\n'
-              '} );\n'
-              '</script>\n'
-              '<style type="text/css">\n'
-              '  /*<![CDATA[*/\n'
-              '    #chart-container { width: 1000px; margin: auto; margin-top: 100px }\n'
-              '    #graph { float: left; }\n'
-              '    #legend { float: right; }\n'
-              '    .clear { clear: both; }\n'
-              '  /*]]>*/\n'
-              '</style>\n')
-        return js
-
-    def timeseries_plot_full(self):
-        js = ('<!doctype>\n'
-              '<link type="text/css" rel="stylesheet" href="http://code.shutterstock.com/rickshaw/rickshaw.min.css">\n'
-              '<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>\n'
-              '<script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.8.21/jquery-ui.min.js"></script>\n'
-              '<script src="http://d3js.org/d3.v2.js"></script>\n'
-              '<script src="http://code.shutterstock.com/rickshaw/rickshaw.min.js"></script>\n'
-              '<script type="text/javascript">\n'
-              'var palette = new Rickshaw.Color.Palette();'
-              'var series = []\n'
-              '$.post("names.json", function(d) {\n'
-              '  d.forEach(function(s) { series.push({ name: s, color: palette.color(s) }); });\n'
-              '  var ajaxGraph = new Rickshaw.Graph.Ajax( {\n'
-              '  	element: document.getElementById("graph"),\n'
-              '  	width: 800, height: 500, renderer: "line",'
-              '  	dataURL: "data.json", series: series,\n'
-              '  	onData: function(d) { Rickshaw.Series.zeroFill(d); return d; },\n'
-              '  	onComplete: function(transport) {\n'
-              '  	  var graph = transport.graph;\n'
-              '  	  var detail = new Rickshaw.Graph.HoverDetail({ graph: graph,\n'
-              '  	    xFormatter: function(x) { return x.toFixed(2) },\n'
-              '  	    yFormatter: function(y) { return y.toFixed(2) }\n'
-              '  	  });\n'
-              '  	 var legend = new Rickshaw.Graph.Legend({ graph: graph, element: document.querySelector("#legend") });\n'
-              '      var shelving = new Rickshaw.Graph.Behavior.Series.Toggle({ graph: graph, legend: legend });\n'
-              '      var highlighter = new Rickshaw.Graph.Behavior.Series.Highlight({ graph: graph, legend: legend });\n'
-              '      var yAxis = new Rickshaw.Graph.Axis.Y({ graph: graph, tickFormat: function(y) { return (y).toFixed(2) } });\n'
-              '      yAxis.render();\n'
-              '  	}\n'
-              '  } );\n'
-              '}, "json");\n'
-              '</script>\n'
-              '<div id="chart-container">\n'
-              '  <div id="graph"></div>\n'
-              '  <div id="legend"></div>\n'
-              '  <div class="clear"></div>\n'
-              '</div>\n'
-              '<style type="text/css">\n'
-              '  /*<![CDATA[*/\n'
-              '    #chart-container { width: 1000px; margin: auto; margin-top: 100px }\n'
-              '    #graph { float: left; }\n'
-              '    #legend { float: right; }\n'
-              '    .clear { clear: both; }\n'
-              '  /*]]>*/\n'
-              '</style>\n')
-        return js
 
 class HttpServer(BaseHTTPServer.HTTPServer):
     """

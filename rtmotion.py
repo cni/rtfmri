@@ -24,6 +24,7 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument('-o', '--hostname', default='cnimr', help='scanner hostname or ip address')
         self.add_argument('-d', '--dicomdir', default='/export/home1/sdc_image_pool/images', help='path to dicom file store on the scanner')
         self.add_argument('-i', '--interval', type=float, default=1.0, help='interval between checking for new files')
+        self.add_argument('-s', '--seriesdir', default=None, help='series directory to use (will default to most recent series)')
 
 
 if __name__ == '__main__':
@@ -31,14 +32,18 @@ if __name__ == '__main__':
     dicom_q = queue.Queue()
     volume_q = queue.Queue()
     result_d = {'exam':0, 'series':0, 'patient_id':'', 'series_description':'', 'tr':0, 'mean_displacement':[], 'affine':[]}
-    scanner = rtclient.RTClient(hostname=args.hostname, username=args.username, password=args.password, image_dir=args.dicomdir)
+    scanner = rtclient.RTClient(hostname=args.hostname, username=args.username, password=args.password,
+                                image_dir=args.dicomdir)
     scanner.connect()
-    series_dir = scanner.series_dir()
+    if args.seriesdir:
+        series_dir = args.seriesdir
+    else:
+        series_dir = scanner.series_dir()
     print series_dir
     if not series_dir:
         assert(false)
 
-    dicom_finder = rtutil.IncrementalDicomFinder(scanner, series_dir, dicom_q, result_d, 0.25)
+    dicom_finder = rtutil.IncrementalDicomFinder(scanner, series_dir, dicom_q, result_d)
     volumizer = rtutil.Volumizer(dicom_q, volume_q, result_d)
     analyzer = rtutil.Analyzer(volume_q, result_d)
     server = rtutil.Server(result_d)

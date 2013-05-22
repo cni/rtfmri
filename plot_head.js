@@ -4,7 +4,7 @@
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>
 <script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.8.21/jquery-ui.min.js"></script>
 <script src="http://d3js.org/d3.v2.js"></script>
-<script src="http://code.shutterstock.com/rickshaw/rickshaw.min.js"></script>
+<script src="pub/rickshaw.js"></script>
 <style type="text/css">
     #content {
         width: 1200px;
@@ -19,6 +19,17 @@
     }
     #slider {
         margin-top: 10px;
+    }
+    #y_label {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 40px;
+    }
+    #legend {
+        display: inline-block;
+        vertical-align: top;
+        margin: 0 0 0 10px;
     }
 </style>
 
