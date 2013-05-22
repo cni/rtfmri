@@ -1007,6 +1007,9 @@ Rickshaw.Graph.Ajax = Rickshaw.Class.create( {
 		this.onComplete = args.onComplete || function() {};
 		this.onError = args.onError || function() {};
 
+        this.num_ajax_errors = 0;
+        this.num_appended = 0;
+
         this.args = args; // pass through to Rickshaw.Graph
 
 		this.request();
@@ -1020,23 +1023,28 @@ Rickshaw.Graph.Ajax = Rickshaw.Class.create( {
 			success: this.success.bind(this),
 			error: this.error.bind(this)
 		} );
+        return(this.num_appended);
 	},
 
 	error: function() {
 
-		console.log("error loading dataURL: " + this.dataURL);
-		this.onError(this);
+        console.log("error loading dataURL: " + this.dataURL);
+		this.num_ajax_errors++;
+        this.onError(this);
 	},
 
 	success: function(data, status) {
 
+        this.num_ajax_errors = 0;
+
 		data = this.onData(data);
 
         if(this.graph){
-		    this.args.series = this._splice({ data: data, series: this.args.series, append: true });
+		    // Update an existing graph
+            this._splice({ data: data, append: true });
 		    this.graph.render();
         }else{
-		    this.args.series = this._splice({ data: data, series: this.args.series });
+		    this._splice({ data: data });
             this.graph = new Rickshaw.Graph(this.args);
 		    this.graph.render();
 		    this.onComplete(this);
@@ -1045,25 +1053,25 @@ Rickshaw.Graph.Ajax = Rickshaw.Class.create( {
 
 	_splice: function(args) {
 
-		var data = args.data;
-		var series = args.series;
-        var append = args.append;
+		if (!this.args.series)
+            this.args.series = args.data;
 
-		if (!args.series) return data;
+        this.num_appended = 0;
 
-		series.forEach( function(s) {
+		this.args.series.forEach( function(s) {
 
 			var seriesKey = s.key || s.name;
 			if (!seriesKey) throw "series needs a key or a name";
 
-			data.forEach( function(d) {
+			args.data.forEach( function(d) {
 
 				var dataKey = d.key || d.name;
 				if (!dataKey) throw "data needs a key or a name";
 
 				if (seriesKey == dataKey) {
-                    if (append){
-                        if (d['data']) {
+                    if (args.append){
+                        if (d['data'] && d['data'].length>0) {
+                            this.num_appended = 1;
                             d['data'].forEach( function(i) {
                                 s['data'].push(i);
                             });
@@ -1077,8 +1085,6 @@ Rickshaw.Graph.Ajax = Rickshaw.Class.create( {
 				}
 			} );
 		} );
-
-		return series;
 	}
 } );
 
@@ -2038,7 +2044,7 @@ Rickshaw.Graph.RangeSlider = function(args) {
 		} );
 	} );
 
-	element[0].style.width = graph.width + 'px';
+	$(element)[0].style.width = graph.width + 'px';
 
 	graph.onUpdate( function() {
 

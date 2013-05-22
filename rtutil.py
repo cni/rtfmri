@@ -376,11 +376,15 @@ class HttpHandler(BaseHTTPServer.BaseHTTPRequestHandler):
                      self.server.result_d['exam'],
                      self.server.result_d['series'],
                      self.server.result_d['series_description']))
-            self.wfile.write('  <div id="chart-container">\n')
-            self.wfile.write('    <div id="chart"></div>\n')
-            self.wfile.write('    <div id="slider"></div>\n')
+            self.wfile.write('  <div id="main-container">\n')
+            self.wfile.write('    <div id="legend"></div>\n')
+            self.wfile.write('    <div id="graph-container">\n')
+            self.wfile.write('      <div id="graph"></div>\n')
+            self.wfile.write('      <div id="x_label">Time (seconds)</div>\n')
+            #self.wfile.write('      <div id="y_label">Displacement (mm/deg)</div>\n')
+            self.wfile.write('      <div id="slider"></div>\n')
+            self.wfile.write('    </div>\n')
             self.wfile.write('  </div>\n')
-            self.wfile.write('<div id="legend"></div>\n')
             self.wfile.write('</div>\n')
             with open('plot.js') as fp:
                 self.wfile.write(fp.read())
@@ -426,7 +430,7 @@ class HttpHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     def jsonify_result(self, res, start_ind=0):
         start_ind = max(0, start_ind)
         md = res['mean_displacement'][start_ind:]
-        transrot = [t.translation.tolist() + t.rotation.tolist() for t in res['affine'][start_ind:]]
+        transrot = [t.translation.tolist() + (t.rotation/3.14*180.).tolist() for t in res['affine'][start_ind:]]
         # TODO: While elegant in some ways, this code seems highly inefficient. There must be a better way...
         d = [{'name':'Mean Displacement', 'data':[{'x':round((t+start_ind)*res['tr'],3), 'y':round(d,3)} for t,d in enumerate(md)]},
              {'name':'Translation_X', 'data':[{'x':round((t+start_ind)*res['tr'],3), 'y':round(r[0],3)} for t,r in enumerate(transrot)]},
