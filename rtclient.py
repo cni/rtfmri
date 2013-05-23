@@ -38,8 +38,31 @@ class RTClient():
         # clean up the list (each item is a string like 'drwxrwxr-x    3 564      201          4096 May 10 01:56 p909')
         # Note that for old items, the timestamp is replaced by the year. So, we filter on ':' to get rid of those.
         file_list = [l.split()[4:] for l in file_list]
-        file_dict = dict([(datetime.datetime.strptime('%d %s' % (cur_year,' '.join(t[1:4])), '%Y %b %d %H:%M'), (t[0],t[4])) for t in file_list if ':' in t[3]])
+        # We have to ensure the keys are unique. The timestamps from ftp have only minute-resolution,
+        # so we can get multiple files with the same timestamp. As a simple hack, we'll fake
+        # the microseconds by using the file index.
+        file_dict = dict([(datetime.datetime.strptime('%d %s:%d' % (cur_year,' '.join(t[1:4]),s), '%Y %b %d %H:%M:%f'), (t[0],t[4])) for s,t in enumerate(file_list) if ':' in t[3]])
         return file_dict
+
+    def exam_info(self, exam_dir=None):
+        if not exam_dir:
+            exam_dir = self.exam_dir()
+        all_series = self.series_dirs(exam_dir=exam_dir)
+        exam_info = []
+        for s in iter(sorted(all_series.iteritems())):
+            file_dict = self.listdir(s[1])
+            if file_dict:
+                dcm = self.get_dicom(os.path.join(s[1], file_dict[min(file_dict.keys())][1]))
+                exam_info.append({'Dicomdir':s[1],
+                                  'ID':dcm.PatientID,
+                                  'Operator':dcm.OperatorsName.translate(None,'^'),
+                                  'Protocol':dcm.ProtocolName,
+                                  'DateTime':datetime.datetime.strptime(dcm.StudyDate + dcm.StudyTime, '%Y%m%d%H%M%S'),
+                                  'Exam':dcm.StudyID,
+                                  'Series':dcm.SeriesNumber,
+                                  'Acquisition':dcm.AcquisitionNumber,
+                                  'Description':dcm.SeriesDescription})
+        return exam_info
 
     def latest_dir(self, imdir):
         if not imdir:
