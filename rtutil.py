@@ -18,41 +18,6 @@ from nibabel.nicom import dicomreaders as dread
 from nibabel.nicom import dicomwrappers as dwrap
 import nipy.algorithms.registration
 
-def findrecentdir(start_dir):
-    all_dirs = [os.path.join(start_dir,d) for d in os.listdir(start_dir) if os.path.isdir(os.path.join(start_dir,d))]
-    if all_dirs:
-        last_mod = max((os.path.getmtime(d),d) for d in all_dirs)[1]
-        return last_mod
-    else:
-        return False
-
-def navigatedown(start_dir):
-    current_dir = start_dir
-    bottom = False
-    while not bottom:
-        sub_dir = findrecentdir(current_dir)
-        if not sub_dir:
-            bottom = True
-        else:
-            current_dir = sub_dir
-    return current_dir
-
-def get_current(top_dir):
-    most_recent_dir = navigatedown(top_dir)
-    current_dir = os.path.abspath(os.path.join(most_recent_dir, '../'))
-    all_dirs = [d for d in os.listdir(current_dir) if os.path.isdir(os.path.join(current_dir,d))]
-    return [current_dir,all_dirs]
-
-def wait_for_new_directory(root_dir, black_list, waittime):
-    baseT = time.time()
-    while (time.time() - baseT) < waittime:
-        recent_dir = findrecentdir(root_dir)
-        if not os.path.basename(recent_dir) in black_list:
-            return recent_dir
-        time.sleep(0.5)
-    return False
-
-
 class IncrementalDicomFinder(threading.Thread):
     """
     Find new DICOM files in the series_path directory and put them into the dicom_queue.
@@ -120,7 +85,6 @@ class IncrementalDicomFinder(threading.Thread):
             return False
         else:
             return True
-
 
     def run(self):
 
