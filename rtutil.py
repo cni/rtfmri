@@ -14,7 +14,6 @@ from urlparse import parse_qs
 import numpy as np
 import dicom
 import nibabel as nib
-from nibabel.nicom import dicomreaders as dread
 from nibabel.nicom import dicomwrappers as dwrap
 import nipy.algorithms.registration
 

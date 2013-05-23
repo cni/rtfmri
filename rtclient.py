@@ -48,21 +48,32 @@ class RTClient():
         if not exam_dir:
             exam_dir = self.exam_dir()
         all_series = self.series_dirs(exam_dir=exam_dir)
-        exam_info = []
+        exam_info = {}
+        first_series_dir = sorted(all_series.iteritems())[0][1]
+        file_dict = self.listdir(first_series_dir)
+        if file_dict:
+            dcm = self.get_dicom(os.path.join(first_series_dir, file_dict[min(file_dict.keys())][1]))
+            exam_info['Exam'] = dcm.StudyID
+            exam_info['ID'] = dcm.PatientID
+            exam_info['Operator'] = dcm.OperatorsName.translate(None,'^')
+            exam_info['Protocol'] = dcm.ProtocolName
+        return exam_info
+
+    def series_info(self, exam_dir=None):
+        if not exam_dir:
+            exam_dir = self.exam_dir()
+        all_series = self.series_dirs(exam_dir=exam_dir)
+        series_info = []
         for s in iter(sorted(all_series.iteritems())):
             file_dict = self.listdir(s[1])
             if file_dict:
                 dcm = self.get_dicom(os.path.join(s[1], file_dict[min(file_dict.keys())][1]))
-                exam_info.append({'Dicomdir':s[1],
-                                  'ID':dcm.PatientID,
-                                  'Operator':dcm.OperatorsName.translate(None,'^'),
-                                  'Protocol':dcm.ProtocolName,
-                                  'DateTime':datetime.datetime.strptime(dcm.StudyDate + dcm.StudyTime, '%Y%m%d%H%M%S'),
-                                  'Exam':dcm.StudyID,
-                                  'Series':dcm.SeriesNumber,
-                                  'Acquisition':dcm.AcquisitionNumber,
-                                  'Description':dcm.SeriesDescription})
-        return exam_info
+                series_info.append({'Dicomdir':s[1],
+                                    'DateTime':datetime.datetime.strptime(dcm.StudyDate + dcm.StudyTime, '%Y%m%d%H%M%S'),
+                                    'Series':dcm.SeriesNumber,
+                                    'Acquisition':dcm.AcquisitionNumber,
+                                    'Description':dcm.SeriesDescription})
+        return series_info
 
     def latest_dir(self, imdir):
         if not imdir:
