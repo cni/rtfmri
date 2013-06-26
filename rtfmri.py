@@ -16,12 +16,12 @@ import rtutil
 import rtclient
 
 
-class FmriAnalyzer(threading.Thread):
+class MaskAveragePuller(threading.Thread):
 
     """FmriAnalyzer gets 3D volumes out of the volume queue and computes real-time statistics on them."""
 
     def __init__(self, volume_q, average_q, mask_data, mask_shape):
-        super(FmriAnalyzer, self).__init__()
+        super(MaskAveragePuller, self).__init__()
         self.volume_q = volume_q
         self.average_q = average_q
         self.alive = True
@@ -31,15 +31,14 @@ class FmriAnalyzer(threading.Thread):
         self.mask_shape = mask_shape
         self.boolmask = np.zeros(mask_shape, np.bool)
         self.boolmask[:,:,:] = mask_data[:,:,:]
+        self.affine = None
 
     def halt(self):
         # temp saver:
-        global AFFINE
         print np.shape(self.whole_brain)
-        print AFFINE
-        test_image = nib.Nifti1Image(self.whole_brain, AFFINE)
-        os.chdir('/home/cni/Desktop/kiefer/')
-        nib.save(test_image, 'test_brain.nii')
+        #print self.affine
+        #test_image = nib.Nifti1Image(self.whole_brain, self.affine)
+        #nib.save(test_image, 'test_brain.nii')
         self.alive = False
 
     def run(self):
@@ -53,25 +52,77 @@ class FmriAnalyzer(threading.Thread):
             else:
                 # TODO: append to 4D volume
                 if not vol_shape:
-                    vol_shape = np.shape(volume)
+                    vol_shape = np.shape(volume.get_data())
+                    self.affine = volume.get_affine()
                 if self.whole_brain is None:
                     self.whole_brain = np.zeros((vol_shape[0],vol_shape[1],vol_shape[2],100))
-                    self.whole_brain[:,:,:,0] = volume
+                    self.whole_brain[:,:,:,0] = volume.get_data()
                     next_vol = 1
                 else:
-                    #self.whole_brain  = np.zeros((vol_shape[0],vol_shape[1],vol_shape[2],next_vol+1))
-                    #self.whole_brain.resize(vol_shape[0],vol_shape[1],vol_shape[2],next_vol+1)
-                    self.whole_brain[:,:,:,next_vol] = volume
-                    #self.whole_brain = np.concatenate((self.whole_brain, volume), axis=0)
+                    self.whole_brain[:,:,:,next_vol] = volume.get_data()
                     next_vol += 1
                 print np.shape(self.whole_brain)
 
-                flat_volume_len = len(volume.flatten())
-                current_average = volume[self.boolmask].sum()/flat_volume_len
-                self.average_q.put(current_volume)
+                flat_volume_len = len(volume.get_data().flatten())
+                current_average = volume.get_data()[self.boolmask].sum()/flat_volume_len
+                self.average_q.put(current_average)
+        
+        
+        
+class PullNifti(threading.Thread):
 
-        #image_save = nib.nifti1.Nifti1Image(self.whole_brain, AFFINE)
-        #nib.nifti1.save(image_save,')
+    """PullNifti reconstructs a nifti file from volumes out of the volumizer thread."""
+
+    def __init__(self, volume_q):
+        super(PullNifti, self).__init__()
+        self.volume_q = volume_q
+        self.alive = True
+        self.whole_brain = None
+        self.brain_list = []
+        self.affine = None
+        self.next_vol = 0
+
+    def halt(self):
+        # temp saver:
+        self.whole_brain = self.whole_brain[:,:,:,:self.next_vol]
+        print np.shape(self.whole_brain)
+        print self.affine
+        test_image = nib.Nifti1Image(self.whole_brain, self.affine)
+        #os.chdir('/home/cni/Desktop/kiefer/')
+        try:
+            os.remove('partial_nifti.nii')
+        except:
+            pass
+        nib.save(test_image, 'partial_nifti.nii')
+        self.alive = False
+
+    def run(self):
+        vol_shape = None
+        while self.alive:
+            try:
+                volume = self.volume_q.get(timeout=1)
+            except queue.Empty:
+                pass
+            else:
+                if not vol_shape:
+                    vol_shape = np.shape(volume.get_data())
+                    self.affine = volume.get_affine()
+                if self.whole_brain is None:
+                    self.whole_brain = np.zeros((vol_shape[0],vol_shape[1],vol_shape[2],1000))
+                    self.whole_brain[:,:,:,0] = volume.get_data()
+                    self.next_vol = 1
+                else:
+                    self.whole_brain[:,:,:,self.next_vol] = volume.get_data()
+                    sefl.next_vol += 1
+                    print next_vol
+		try:
+                    os.remove('complete_nifti.nii')
+		except:
+                    pass
+        self.whole_brain = self.whole_brain[:,:,:,:self.next_vol]
+        print np.shape(self.whole_brain)
+        image_save = nib.nifti1.Nifti1Image(self.whole_brain, self.affine)
+        nib.save(image_save, 'complete_nifti.nii')
 
 
 class NeurofeedbackSocket(threading.Thread):
@@ -184,65 +235,115 @@ if __name__ == '__main__':
     average_q = queue.Queue()
     result_d = {'exam':0, 'series':0, 'patient_id':'', 'series_description':'', 'tr':0}
 
-    if args.maskfile:
-        mask_filename = args.maskfile
-    else:
-        mask_name = raw_input('name of mask file: ')
-        mask_filename = glob.glob(mask_name)[0]
-    if mask_filename:
-        [maskdata,maskaffine,maskshape] = load_mask_nifti(mask_filename)
+    run_type = ''
+    while not run_type in ['mask','functional']:
+        run_type = raw_input('which run? [mask, functional]')
+	
+    if run_type == 'mask':
+	
+        scanner = rtclient.RTClient(hostname=args.hostname, username=args.username, password=args.password,image_dir=args.dicomdir)
+        scanner.connect()
+        exam_dir = scanner.exam_dir()
+        exam_info = scanner.exam_info(exam_dir)
+        print('')
+        for k,v in exam_info.iteritems():
+            print('%20s: %s' % (k,v))
+        print('')
+        go = raw_input('Hit it when you''re ready:')
 
-    if args.paramfile:
-        parameter_file = args.paramfile
-    else:
-        param_name = raw_input('name of parameter file: ')
-        parameter_file = glob.glob(param_name)[0]
+        series_dir = scanner.series_dir(exam_dir)
+        print series_dir
+        if not series_dir:
+            assert(false)
 
-    scanner = rtclient.RTClient(hostname=args.hostname, username=args.username, password=args.password,
-                                image_dir=args.dicomdir)
+        dicom_finder = rtutil.IncrementalDicomFinder(scanner, series_dir, dicom_q, result_d)
+        volumizer = rtutil.Volumizer(dicom_q, volume_q, result_d)
+        puller = PullNifti(volume_q)
 
-    scanner.connect()
+        def term_handler(signum, stack):
+            print 'Receieved SIGTERM - shutting down...'
+            dicom_finder.halt()
+            volumizer.halt()
+            puller.halt()
+            print 'Asked all threads to terminate'
+            dicom_finder.join()
+            volumizer.join()
+            puller.join()
+            print 'Process complete'
+            sys.exit(0)
 
-    exam_dir = scanner.exam_dir()
-    exam_info = scanner.exam_info(exam_dir)
-    print('')
-    for k,v in exam_info.iteritems():
-        print('%20s: %s' % (k,v))
-    print('')
-    go = raw_input('Hit it when you''re ready:')
+        signal.signal(signal.SIGINT, term_handler)
+        signal.signal(signal.SIGTERM, term_handler)
 
-    series_dir = scanner.series_dir(exam_dir)
-    print series_dir
-    if not series_dir:
-        assert(false)
+        dicom_finder.start()
+        volumizer.start()
+        puller.start()
 
-    dicom_finder = rtutil.IncrementalDicomFinder(scanner, series_dir, dicom_q, result_d)
-    volumizer = rtutil.Volumizer(dicom_q, volume_q, result_d)
-    analyzer = FmriAnalyzer(volume_q, average_q, maskdata, maskshape)
-    neurosocket = NeurofeedbackSocket(average_q, parameter_file)
+        while True: time.sleep(60)  # stick around to receive and process signals
+		
+		
+    elif run_type == 'functional':
 
-    def term_handler(signum, stack):
-        print 'Receieved SIGTERM - shutting down...'
-        dicom_finder.halt()
-        volumizer.halt()
-        analyzer.halt()
-        neurosocket.halt()
-        print 'Asked all threads to terminate'
-        dicom_finder.join()
-        volumizer.join()
-        analyzer.join()
-        neurosocket.join()
-        print 'Process complete'
-        sys.exit(0)
+        if args.maskfile:
+            mask_filename = args.maskfile
+        else:
+            mask_name = raw_input('name of mask file: ')
+            mask_filename = glob.glob(mask_name)[0]
+        if mask_filename:
+            [maskdata,maskaffine,maskshape] = load_mask_nifti(mask_filename)
+        else:
+            maskdata, maskaffine, maskshape = None, None, None
 
-    signal.signal(signal.SIGINT, term_handler)
-    signal.signal(signal.SIGTERM, term_handler)
+        if args.paramfile:
+            parameter_file = args.paramfile
+        else:
+            param_name = raw_input('name of parameter file: ')
+            parameter_file = glob.glob(param_name)[0]
 
-    dicom_finder.start()
-    volumizer.start()
-    analyzer.start()
-    neurosocket.start()
+        scanner = rtclient.RTClient(hostname=args.hostname, username=args.username, password=args.password,image_dir=args.dicomdir)
 
-    while True: time.sleep(60)  # stick around to receive and process signals
+        scanner.connect()
+
+        exam_dir = scanner.exam_dir()
+        exam_info = scanner.exam_info(exam_dir)
+        print('')
+        for k,v in exam_info.iteritems():
+            print('%20s: %s' % (k,v))
+        print('')
+        go = raw_input('Hit it when you''re ready:')
+
+        series_dir = scanner.series_dir(exam_dir)
+        print series_dir
+        if not series_dir:
+            assert(false)
+
+        dicom_finder = rtutil.IncrementalDicomFinder(scanner, series_dir, dicom_q, result_d)
+        volumizer = rtutil.Volumizer(dicom_q, volume_q, result_d)
+        analyzer = FmriAnalyzer(volume_q, average_q, maskdata, maskshape)
+        neurosocket = NeurofeedbackSocket(average_q, parameter_file)
+
+        def term_handler(signum, stack):
+            print 'Receieved SIGTERM - shutting down...'
+            dicom_finder.halt()
+            volumizer.halt()
+            analyzer.halt()
+            neurosocket.halt()
+            print 'Asked all threads to terminate'
+            dicom_finder.join()
+            volumizer.join()
+            analyzer.join()
+            neurosocket.join()
+            print 'Process complete'
+            sys.exit(0)
+
+        signal.signal(signal.SIGINT, term_handler)
+        signal.signal(signal.SIGTERM, term_handler)
+
+        dicom_finder.start()
+        volumizer.start()
+        analyzer.start()
+        neurosocket.start()
+
+        while True: time.sleep(60)  # stick around to receive and process signals
 
 
