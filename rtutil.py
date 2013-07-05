@@ -65,9 +65,7 @@ class IncrementalDicomFinder(threading.Thread):
         self.interval = interval
         self.alive = True
         self.series_path = None
-        self.server_inum = 0
-        self.dicom_nums = []
-        self.dicom_search_start = 0
+        self.dicom_files = set()
         self.exam_num = None
         self.series_num = None
         self.acq_num = None
@@ -75,29 +73,6 @@ class IncrementalDicomFinder(threading.Thread):
 
     def halt(self):
         self.alive = False
-
-    def get_initial_filelist(self):
-        time.sleep(0.1)
-        try:
-            files = self.rtclient.get_file_list(self.series_path)
-        except:
-            print 'DicomFinder: failed to get file list from scanner'
-            files = []
-        if files:
-            files.sort()
-            for fn in files:
-                spl = os.path.basename(fn).split('.')
-                current_inum = int(spl[0][1:])
-                if current_inum > self.server_inum:
-                    self.server_inum = current_inum
-                self.dicom_nums.append(int(spl[2]))
-            gaps = [x for x in range(max(self.dicom_nums)) if x not in self.dicom_nums]
-            gaps.remove(0)
-            if gaps:
-                self.dicom_search_start = min(gaps)
-            else:
-                self.dicom_search_start = max(self.dicom_nums)+1
-        return files
 
     def check_dcm(self, dcm, verbose=False):
         if not self.exam_num:
@@ -125,40 +100,14 @@ class IncrementalDicomFinder(threading.Thread):
 
             if self.series_path != None:
                 before_check = datetime.datetime.now()
-                if self.server_inum == 0:
-                    filenames = self.get_initial_filelist()
-                    for fn in filenames:
-                        try:
-                            dcm = self.rtclient.get_dicom(fn)
-                            if self.check_dcm(dcm):
-                                self.dicom_queue.put(dcm)
-                        except:
-                            print 'DicomFinder: failed to get file %s from scanner.' % fn
-                else:
-                    first_failure = False
-                    ind_tries = [x for x in range(self.dicom_search_start, max(self.dicom_nums)+10) if x not in self.dicom_nums]
-                    for d in ind_tries:
-                        try:
-                            current_filename = 'i'+str(self.server_inum+1)+'.MRDC.'+str(d)
-                            #print current_filename
-                            dcm = self.rtclient.get_dicom(os.path.join(self.series_dir, current_filename))
-                            if not len(dcm.PixelData) == 2 * dcm.Rows * dcm.Columns:
-                                print 'corruption error'
-                                print 'pixeldata: '+str(len(dcm.PixelData))
-                                print 'expected: '+str(2*dcm.Rows*dcm.Columns)
-                                raise Exception
-                        except:
-                            #print current_filename+', failed attempt'
-                            if not first_failure:
-                                self.dicom_search_start = d
-                                first_failure = True
-                        else:
-                            #print current_filename+', successful attempt'+'\n'
-                            if self.check_dcm(dcm):
-                                self.dicom_queue.put(dcm)
-                            self.dicom_nums.append(d)
-                            self.server_inum += 1
-                        time.sleep(self.interval)
+                filenames = set(self.rtclient.get_file_list(self.series_path))
+                new_files = filenames - self.dicom_files
+                for fn in new_files:
+                    dcm = self.rtclient.get_dicom(fn)
+                    if self.check_dcm(dcm):
+                        self.dicom_queue.put(dcm)
+                        self.dicom_files.add(fn)
+                time.sleep(self.interval)
 
 
 class Volumizer(threading.Thread):
