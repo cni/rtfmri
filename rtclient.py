@@ -27,10 +27,15 @@ class RTClient():
         else:
             self.ftp = FTP(self.hostname, user=self.username, passwd=self.password)
 
+    def close(self):
+        if self.ftp:
+            self.ftp.close()
+
     def listdir(self, imdir):
         # Returns a dict of all files in imdir, where the file mod time is the key (as a datetime obj)
         # and the value is a tuple of (file_size, file_name). E.g.,  {datetime.datetime(2013, 5, 14, 23, 2): ('4096', 'p939')}
         file_list = []
+        self.connect()
         self.ftp.dir(imdir, file_list.append)
         if len(file_list) == 0:
             return None
@@ -38,13 +43,15 @@ class RTClient():
         # clean up the list (each item is a string like 'drwxrwxr-x    3 564      201          4096 May 10 01:56 p909')
         # Note that for old items, the timestamp is replaced by the year. So, we filter on ':' to get rid of those.
         file_list = [l.split()[4:] for l in file_list]
-        # We have to ensure the keys are unique. The timestamps from ftp have only minute-resolution,
+        # We have to ensure the keys are unique. The timestamps from ftp have a coarse resolution,
         # so we can get multiple files with the same timestamp. As a simple hack, we'll fake
-        # the microseconds by using the file index.
+        # the microseconds by using the file index. (We could fake seconds, but then we'd have to
+        # worry about the 0-59 limit.)
         file_dict = dict([(datetime.datetime.strptime('%d %s:%d' % (cur_year,' '.join(t[1:4]),s), '%Y %b %d %H:%M:%f'), (t[0],t[4])) for s,t in enumerate(file_list) if ':' in t[3]])
         return file_dict
 
     def exam_info(self, exam_dir=None):
+        self.connect()
         if not exam_dir:
             exam_dir = self.exam_dir()
         all_series = self.series_dirs(exam_dir=exam_dir)
@@ -57,9 +64,12 @@ class RTClient():
             exam_info['ID'] = dcm.PatientID
             exam_info['Operator'] = dcm.OperatorsName.translate(None,'^')
             exam_info['Protocol'] = dcm.ProtocolName
+            exam_info['exam_dir'] = exam_dir
+            exam_info['first_series_dir'] = first_series_dir
         return exam_info
 
     def series_info(self, exam_dir=None):
+        self.connect()
         if not exam_dir:
             exam_dir = self.exam_dir()
         all_series = self.series_dirs(exam_dir=exam_dir)
@@ -87,7 +97,7 @@ class RTClient():
 
     def exam_dir(self):
         self.connect()
-        # The exam dir is exactly 2 layers deep:
+        # The exam dir is exactly 2 layers deep
         return self.latest_dir(self.latest_dir(self.image_dir))
 
     def series_dirs(self, exam_dir=None):
@@ -106,15 +116,20 @@ class RTClient():
                 all_series[k] = os.path.join(exam_dir, file_dict[k][1])
         return all_series
 
-    def series_dir(self, exam_dir=None):
+    def series_dir(self, exam_dir=None, series_num=None):
         self.connect()
         if not exam_dir:
             exam_dir = self.exam_dir()
-        return self.latest_dir(exam_dir)
+        if not series_num:
+            series_dir = self.latest_dir(exam_dir)
+        else:
+            series_dir = next((sd['Dicomdir'] for sd in self.series_info(exam_dir=exam_dir) if sd['Series']==series_num), None)
+        return series_dir
 
     def get_file_list(self, series_dir):
         # If we need to worry about partial files, then we should use listdir and check file sizes.
         # But that is really slow.
+        self.connect()
         return self.ftp.nlst(series_dir)
 
     def get_file(self, filename):

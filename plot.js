@@ -63,7 +63,7 @@ graph = new Rickshaw.Graph.Ajax( {
 var num_tries = 0;
 var iv = setInterval( function() {
     var last_time_ind = graph.args.series[0]['data'].length
-    graph.dataURL = 'data.json?start=' + last_time_ind
+    graph.dataURL = 'data.json?e=' + e + '&s=' + s + '&a=' + a + '&start=' + last_time_ind
     var num_appended = graph.request()
     // Stop polling if we haven't received any data in a while.
     if (num_appended==0) num_tries++;

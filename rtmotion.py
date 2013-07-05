@@ -2,6 +2,18 @@
 #
 # @author:  Robert Dougherty, Kiefer Katovich, Gunnar Schaefer
 
+"""
+Refactor:
+    * Add a thread to find new exams/series and queue them up for dicomFinder thread
+    * Dicom finder just keeps pushing dicoms to the dicom queue
+    * Volumizer volumizes as before, but also tags each volume with exam/series/acq (e/s/a)
+    * Analyzer analyzes each e/s/a separately, pushing to results queue
+    * Make results a queue of exams, with each containing a queue of s/a items
+    * Server probes the results queue to see what e/s/a options to list in the GUI
+    * GUI list is updated every 5 seconds via ajax, and discards old exam items from the
+      results queue, AFTER it has updated the available exam list for the ajax call.
+"""
+
 import Queue as queue
 import signal
 import argparse
@@ -24,37 +36,35 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument('-o', '--hostname', default='cnimr', help='scanner hostname or ip address')
         self.add_argument('-d', '--dicomdir', default='/export/home1/sdc_image_pool/images', help='path to dicom file store on the scanner')
         self.add_argument('-i', '--interval', type=float, default=1.0, help='interval between checking for new files')
-        self.add_argument('-s', '--seriesdir', default=None, help='series directory to use (will default to most recent series)')
+        self.add_argument('-r', '--port', type=int, default=8080, help='port to serve the results')
 
 
 if __name__ == '__main__':
     args = ArgumentParser().parse_args()
+    series_q = queue.Queue()
     dicom_q = queue.Queue()
     volume_q = queue.Queue()
-    result_d = {'exam':0, 'series':0, 'patient_id':'', 'series_description':'', 'tr':0, 'mean_displacement':[], 'affine':[]}
-    scanner = rtclient.RTClient(hostname=args.hostname, username=args.username, password=args.password,
+    result_d = {}
+    scanner1 = rtclient.RTClient(hostname=args.hostname, username=args.username, password=args.password,
                                 image_dir=args.dicomdir)
-    scanner.connect()
-    if args.seriesdir:
-        series_dir = args.seriesdir
-    else:
-        series_dir = scanner.series_dir()
-    print series_dir
-    if not series_dir:
-        assert(false)
+    scanner2 = rtclient.RTClient(hostname=args.hostname, username=args.username, password=args.password,
+                                image_dir=args.dicomdir)
 
-    dicom_finder = rtutil.IncrementalDicomFinder(scanner, series_dir, dicom_q, result_d)
-    volumizer = rtutil.Volumizer(dicom_q, volume_q, result_d)
+    series_finder = rtutil.SeriesFinder(scanner1, series_q)
+    dicom_finder = rtutil.IncrementalDicomFinder(scanner2, series_q, dicom_q)
+    volumizer = rtutil.Volumizer(dicom_q, volume_q)
     analyzer = rtutil.Analyzer(volume_q, result_d)
-    server = rtutil.Server(result_d)
+    server = rtutil.Server(result_d, port=args.port)
 
     def term_handler(signum, stack):
         print 'Receieved SIGTERM - shutting down...'
+        series_finder.halt()
         dicom_finder.halt()
         volumizer.halt()
         analyzer.halt()
         server.halt()
         print 'Asked all threads to terminate'
+        series_finder.join()
         dicom_finder.join()
         volumizer.join()
         analyzer.join()
@@ -65,6 +75,7 @@ if __name__ == '__main__':
     signal.signal(signal.SIGINT, term_handler)
     signal.signal(signal.SIGTERM, term_handler)
 
+    series_finder.start()
     dicom_finder.start()
     volumizer.start()
     analyzer.start()

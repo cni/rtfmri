@@ -14,27 +14,63 @@ from urlparse import parse_qs
 import numpy as np
 import dicom
 import nibabel as nib
-from nibabel.nicom import dicomwrappers as dwrap
+#from nibabel.nicom import dicomwrappers as dwrap
 import nipy.algorithms.registration
+
+class SeriesFinder(threading.Thread):
+    """
+    SeriesFinder finds new exam/series directories and pushes
+    them onto the series queue.
+    """
+
+    def __init__(self, scanner, series_queue):
+        super(SeriesFinder, self).__init__()
+        self.series_queue = series_queue
+        self.cur_series_dir = None
+        self.scanner = scanner
+        self.alive = True
+
+    def halt(self):
+        self.alive = False
+
+    def run(self):
+        while self.alive:
+            try:
+                if not self.cur_series_dir:
+                    # This is the first time, so load all the series in the latest exam.
+                    all_series = self.scanner.series_dirs()
+                    for k in sorted(all_series):
+                        self.series_queue.put(all_series[k])
+                    self.cur_series_dir = all_series[k]
+                else:
+                    latest_series_dir = self.scanner.series_dir()
+                    if latest_series_dir != self.cur_series_dir:
+                        self.cur_series_dir = latest_series_dir
+                        self.series_queue.put(latest_series_dir)
+            except:
+                print 'SeriesFinder: failed to get latest series dir from scanner.'
+            time.sleep(1)
+
 
 class IncrementalDicomFinder(threading.Thread):
     """
-    Find new DICOM files in the series_path directory and put them into the dicom_queue.
+    Get a series path from the series queue, find new DICOM files
+    in that series directory and put them into the dicom_queue.
     """
-    def __init__(self, rtclient, series_path, dicom_queue, result_d, interval=0.5):
+    def __init__(self, rtclient, series_queue, dicom_queue, interval=0.5):
         super(IncrementalDicomFinder, self).__init__()
         self.rtclient = rtclient
-        self.series_path = series_path
+        self.series_queue = series_queue
         self.dicom_queue = dicom_queue
         self.interval = interval
         self.alive = True
+        self.series_path = None
         self.server_inum = 0
         self.dicom_nums = []
         self.dicom_search_start = 0
         self.exam_num = None
         self.series_num = None
         self.acq_num = None
-        self.result_d = result_d
         print 'initialized'
 
     def halt(self):
@@ -42,9 +78,13 @@ class IncrementalDicomFinder(threading.Thread):
 
     def get_initial_filelist(self):
         time.sleep(0.1)
-        files = self.rtclient.get_file_list(self.series_path)
-        files.sort()
+        try:
+            files = self.rtclient.get_file_list(self.series_path)
+        except:
+            print 'DicomFinder: failed to get file list from scanner'
+            files = []
         if files:
+            files.sort()
             for fn in files:
                 spl = os.path.basename(fn).split('.')
                 current_inum = int(spl[0][1:])
@@ -57,24 +97,15 @@ class IncrementalDicomFinder(threading.Thread):
                 self.dicom_search_start = min(gaps)
             else:
                 self.dicom_search_start = max(self.dicom_nums)+1
-            return files
-        else:
-            return False
+        return files
 
-    def check_dcm(self, dcm, verbose=True):
+    def check_dcm(self, dcm, verbose=False):
         if not self.exam_num:
             self.exam_num = int(dcm.StudyID)
             self.series_num = int(dcm.SeriesNumber)
             self.acq_num = int(dcm.AcquisitionNumber)
             self.series_description = dcm.SeriesDescription
             self.patient_id = dcm.PatientID
-            # initialize the results dict
-            self.result_d['exam'] = self.exam_num
-            self.result_d['series'] = self.series_num
-            self.result_d['patient_id'] = self.patient_id
-            self.result_d['series_description'] = self.series_description
-            self.result_d['tr'] = float(dcm.RepetitionTime) / 1000.
-
             if verbose:
                 print('Acquiring dicoms for exam %d, series %d (%s / %s)'
                         % (self.exam_num, self.series_num, self.patient_id, self.series_description))
@@ -86,44 +117,48 @@ class IncrementalDicomFinder(threading.Thread):
             return True
 
     def run(self):
-
         while self.alive:
-            #print sorted(self.dicom_nums)
-            #print self.server_inum
-            before_check = datetime.datetime.now()
-            #print before_check
+            if not self.series_queue.empty():
+                self.series_path = self.series_queue.get()
+                self.server_inum = 0
+                self.exam_num = None
 
-            if self.server_inum == 0:
-                filenames = self.get_initial_filelist()
-                for fn in filenames:
-                    dcm = self.rtclient.get_dicom(fn)
-                    if self.check_dcm(dcm):
-                        self.dicom_queue.put(dcm)
-            else:
-                first_failure = False
-                ind_tries = [x for x in range(self.dicom_search_start, max(self.dicom_nums)+10) if x not in self.dicom_nums]
-                for d in ind_tries:
-                    try:
-                        current_filename = 'i'+str(self.server_inum+1)+'.MRDC.'+str(d)
-                        #print current_filename
-                        dcm = self.rtclient.get_dicom(os.path.join(self.series_dir, current_filename))
-                        if not len(dcm.PixelData) == 2 * dcm.Rows * dcm.Columns:
-                            print 'corruption error'
-                            print 'pixeldata: '+str(len(dcm.PixelData))
-                            print 'expected: '+str(2*dcm.Rows*dcm.Columns)
-                            raise Exception
-                    except:
-                        #print current_filename+', failed attempt'
-                        if not first_failure:
-                            self.dicom_search_start = d
-                            first_failure = True
-                    else:
-                        #print current_filename+', successful attempt'+'\n'
-                        if self.check_dcm(dcm):
-                            self.dicom_queue.put(dcm)
-                        self.dicom_nums.append(d)
-                        self.server_inum += 1
-                    time.sleep(self.interval)
+            if self.series_path != None:
+                before_check = datetime.datetime.now()
+                if self.server_inum == 0:
+                    filenames = self.get_initial_filelist()
+                    for fn in filenames:
+                        try:
+                            dcm = self.rtclient.get_dicom(fn)
+                            if self.check_dcm(dcm):
+                                self.dicom_queue.put(dcm)
+                        except:
+                            print 'DicomFinder: failed to get file %s from scanner.' % fn
+                else:
+                    first_failure = False
+                    ind_tries = [x for x in range(self.dicom_search_start, max(self.dicom_nums)+10) if x not in self.dicom_nums]
+                    for d in ind_tries:
+                        try:
+                            current_filename = 'i'+str(self.server_inum+1)+'.MRDC.'+str(d)
+                            #print current_filename
+                            dcm = self.rtclient.get_dicom(os.path.join(self.series_dir, current_filename))
+                            if not len(dcm.PixelData) == 2 * dcm.Rows * dcm.Columns:
+                                print 'corruption error'
+                                print 'pixeldata: '+str(len(dcm.PixelData))
+                                print 'expected: '+str(2*dcm.Rows*dcm.Columns)
+                                raise Exception
+                        except:
+                            #print current_filename+', failed attempt'
+                            if not first_failure:
+                                self.dicom_search_start = d
+                                first_failure = True
+                        else:
+                            #print current_filename+', successful attempt'+'\n'
+                            if self.check_dcm(dcm):
+                                self.dicom_queue.put(dcm)
+                            self.dicom_nums.append(d)
+                            self.server_inum += 1
+                        time.sleep(self.interval)
 
 
 class Volumizer(threading.Thread):
@@ -132,11 +167,10 @@ class Volumizer(threading.Thread):
     and pushes them onto the volume queue.
     """
 
-    def __init__(self, dicom_q, volume_q, result_d, affine=None):
+    def __init__(self, dicom_q, volume_q, affine=None):
         super(Volumizer, self).__init__()
         self.dicom_q = dicom_q
         self.volume_q = volume_q
-        self.result_d = result_d
         self.alive = True
         self.affine = affine
         self.slices_per_volume = None
@@ -148,7 +182,7 @@ class Volumizer(threading.Thread):
 
     def run(self):
         dicoms = {}
-
+        tr = 1
         base_time = time.time()
         while self.alive:
             try:
@@ -160,7 +194,7 @@ class Volumizer(threading.Thread):
                 if self.slices_per_volume is None:
                     TAG_SLICES_PER_VOLUME = (0x0021, 0x104f)
                     self.slices_per_volume = int(dcm[TAG_SLICES_PER_VOLUME].value) if TAG_SLICES_PER_VOLUME in dcm else int(getattr(dcm, 'ImagesInAcquisition', 0))
-                dicom = dwrap.wrapper_from_data(dcm)
+                #dicom = dwrap.wrapper_from_data(dcm)
                 if self.affine is None:
                     # FIXME: dicom.get_affine is broken for our GE files. We should fix that!
                     #self.affine = dicom.get_affine()
@@ -170,9 +204,7 @@ class Volumizer(threading.Thread):
                     self.affine[0:3,0:3] = np.diag(mm_per_vox)
                     self.affine[:,3] = np.array((-pos[0], -pos[1], pos[2], 1)).T
                     print(self.affine)
-                dicoms[dicom.instance_number] = dicom
-
-                #print 'put in dicom:' + str(dicom.instance_number)
+                dicoms[dcm.InstanceNumber] = dcm
 
                 # The dicom instance number should indicate where this dicom belongs.
                 # It should start at 1 for the first slice of the first volume, and increment
@@ -181,22 +213,28 @@ class Volumizer(threading.Thread):
                 vol_inst_nums = range(start_inst, start_inst + self.slices_per_volume)
                 # test to see if the dicom dict contains at least the dicom instance numbers that we need
                 if all([(ind in dicoms) for ind in vol_inst_nums]):
-                    cur_vol_shape = (dicoms[start_inst].image_shape[0], dicoms[start_inst].image_shape[1], self.slices_per_volume)
-                    if not self.vol_shape:
-                        self.vol_shape = cur_vol_shape
-                    volume = np.zeros(self.vol_shape)
-                    if self.vol_shape != cur_vol_shape:
-                        print 'WARNING: Volume %03d is the wrong shape! Skipping...' % self.completed_vols
-                    else:
-                        for i,ind in enumerate(vol_inst_nums):
-                            volume[:,:,i] = dicoms[ind].get_data()
-                        volimg = nib.Nifti1Image(volume, self.affine)
-                        self.volume_q.put(volimg)
-                        print 'VOLUME %03d COMPLETE in %0.2f seconds!' % (self.completed_vols, time.time()-base_time)
-                        #nib.save(volimg,'/tmp/rtmc_volume_%03d.nii.gz' % self.completed_vols)
+                    vol_shape = (dicoms[start_inst].pixel_array.shape[0],
+                                 dicoms[start_inst].pixel_array.shape[1],
+                                 self.slices_per_volume)
+                    img = np.zeros(vol_shape)
+                    for i,ind in enumerate(vol_inst_nums):
+                        img[:,:,i] = dicoms[ind].pixel_array
+                    volimg = nib.Nifti1Image(img, self.affine)
+                    volume = {}
+                    volume['exam'] = int(dicoms[start_inst].StudyID)
+                    volume['series'] = int(dicoms[start_inst].SeriesNumber)
+                    volume['acq_num'] = int(dicoms[start_inst].AcquisitionNumber)
+                    volume['patient_id'] = dicoms[start_inst].PatientID
+                    volume['series_description'] = dicoms[start_inst].SeriesDescription
+                    volume['tr'] = float(dicoms[start_inst].RepetitionTime) / 1000.
+                    tr = volume['tr']
+                    volume['img'] = volimg
+                    self.volume_q.put(volume)
+                    #print 'VOLUME %03d COMPLETE in %0.2f seconds!' % (self.completed_vols, time.time()-base_time)
+                    #nib.save(volimg,'/tmp/rtmc_volume_%03d.nii.gz' % self.completed_vols)
                     self.completed_vols += 1
                     base_time = time.time()
-
+        time.sleep(tr/2.)
 
 class Analyzer(threading.Thread):
     """
@@ -209,6 +247,7 @@ class Analyzer(threading.Thread):
         self.result_d = result_d
         self.alive = True
         self.ref_vol = None
+        self.cur_esa = None
         self.mean_img = 0.
         self.max_displacement = 0.
         self.skip_vols = skip_vols
@@ -220,24 +259,39 @@ class Analyzer(threading.Thread):
         self.alive = False
 
     def run(self):
-        vol_num = -1
         while self.alive:
             try:
-                volimg = self.volume_q.get(timeout=1)
+                volume = self.volume_q.get(timeout=1)
             except queue.Empty:
                 pass
             else:
-                vol_num += 1
+                vol_esa = (volume['exam'], volume['series'], volume['acq_num'])
+                print 'ANALYZER: processing %s' % str(vol_esa)
+                if not self.cur_esa or self.cur_esa != vol_esa:
+                    # This volume is not like the others-- re-initialize.
+                    vol_num = -1
+                    self.ref_vol = volume
+                    self.cur_esa = vol_esa
+                    self.mean_img = 0.
+                    self.max_displacement = 0.
+                    self.result_d[self.cur_esa] = {}
+                    self.result_d[self.cur_esa]['tr'] = volume['tr']
+                    self.result_d[self.cur_esa]['patient_id'] = volume['patient_id']
+                    self.result_d[self.cur_esa]['series_description'] = volume['series_description']
+                    self.result_d[self.cur_esa]['mean_displacement'] = []
+                    self.result_d[self.cur_esa]['affine'] = []
+                else:
+                    vol_num += 1
                 if vol_num>=self.skip_vols:
-                    if not self.ref_vol:
+                    if vol_num==self.skip_vols:
                         print "SETTING REF VOL TO VOLUME #%03d" % vol_num
-                        self.ref_vol = volimg
+                        self.ref_vol = volume
                     else:
                         # compute motion
                         # TODO: detect 4d datasets. Also check for diffusion scans, and use histogram registration for those.
                         #print "COMPUTING MOTION ON VOLUME #%03d" % vol_num
-                        ref = self.ref_vol.get_data()
-                        img = volimg.get_data()
+                        ref = self.ref_vol['img'].get_data()
+                        img = volume['img'].get_data()
                         # Ensure the arrays are 4d:
                         ref.shape += (1,) * (4 - ref.ndim)
                         img.shape += (1,) * (4 - img.ndim)
@@ -247,7 +301,7 @@ class Analyzer(threading.Thread):
                         # BEGIN STDOUT SUPRESSION
                         actualstdout = sys.stdout
                         sys.stdout = open(os.devnull,'w')
-                        im4d = nib.Nifti1Image(np.concatenate((ref, img), axis=3), self.ref_vol.get_affine())
+                        im4d = nib.Nifti1Image(np.concatenate((ref, img), axis=3), self.ref_vol['img'].get_affine())
                         reg = nipy.algorithms.registration.FmriRealign4d(im4d, 'ascending', time_interp=False)
                         reg.estimate(loops=2)
                         T = reg._transforms[0][1]
@@ -259,9 +313,9 @@ class Analyzer(threading.Thread):
                         #aligned_raw = nipy.algorithms.registration.resample(volimg, T, self.ref_vol).get_data()
                         self.mean_img += aligned_raw.astype(float)
                         # get the full affine for this volume by pre-multiplying by the reference affine
-                        mc_affine = np.dot(self.ref_vol.get_affine(), T.as_affine())
+                        mc_affine = np.dot(self.ref_vol['img'].get_affine(), T.as_affine())
                         # Compute the error matrix
-                        T_error = self.ref_vol.get_affine() - mc_affine
+                        T_error = self.ref_vol['img'].get_affine() - mc_affine
                         A = np.matrix(T_error[0:3,0:3])
                         t = np.matrix(T_error[0:3,3]).T
                         # radius of the spherical head assumption (in mm):
@@ -269,16 +323,17 @@ class Analyzer(threading.Thread):
                         # The center of the volume. Assume 0,0,0 in world coordinates.
                         xc = np.matrix((0,0,0)).T
                         mean_disp = np.sqrt( R**2. / 5 * np.trace(A.T * A) + (t + A*xc).T * (t + A*xc) ).item()
-                        self.result_d['mean_displacement'].append(mean_disp)
+                        self.result_d[self.cur_esa]['mean_displacement'].append(mean_disp)
                         if mean_disp > self.max_displacement:
                             self.max_displacement = mean_disp
-                        self.result_d['affine'].append(T)
+                        self.result_d[self.cur_esa]['affine'].append(T)
                         print "VOL %03d: mean displacement = %f mm, max displacement = %f mm" % (vol_num, mean_disp, self.max_displacement)
                 else:
                     # put dummy values in so that we know these volumes were skipped
                     #print(self.result_d)
-                    self.result_d['mean_displacement'].append(0.)
-                    self.result_d['affine'].append(nipy.algorithms.registration.affine.Affine(np.eye(4)))
+                    # TODO: this check should not be necessary. The dict should always have been initialized by the time we get here.
+                    self.result_d[self.cur_esa]['mean_displacement'].append(0.)
+                    self.result_d[self.cur_esa]['affine'].append(nipy.algorithms.registration.affine.Affine(np.eye(4)))
 
 
 class Server(threading.Thread):
@@ -328,31 +383,42 @@ class HttpHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
         if path in ['/','/index.html']:
             self.do_HEAD()
+            if qs and 'e' in qs and 's' in qs and 'a' in qs:
+                esa = (int(qs['e'][0]), int(qs['s'][0]), int(qs['a'][0]))
+            else:
+                esa = None
             self.wfile.write('<html><head><title>CNI MR Real-time Server</title>')
             # TODO: serve this as a file so the browser will cache it.`
             with open('plot_head.js') as fp:
                 self.wfile.write(fp.read())
             self.wfile.write('</head>\n<body>\n')
             self.wfile.write('<div id="content">\n')
-            self.wfile.write('<h1>%s: Exam %d, Series %d (%s)</h1>\n' %
-                    (self.server.result_d['patient_id'],
-                     self.server.result_d['exam'],
-                     self.server.result_d['series'],
-                     self.server.result_d['series_description']))
-            self.wfile.write('  <div id="main-container">\n')
-            self.wfile.write('    <div id="legend"></div>\n')
-            self.wfile.write('    <div id="graph-container">\n')
-            self.wfile.write('      <div id="graph"></div>\n')
-            self.wfile.write('      <div id="x_label">Time (seconds)</div>\n')
-            #self.wfile.write('      <div id="y_label">Displacement (mm/deg)</div>\n')
-            self.wfile.write('      <div id="slider"></div>\n')
-            self.wfile.write('    </div>\n')
-            self.wfile.write('  </div>\n')
-            self.wfile.write('</div>\n')
-            with open('plot.js') as fp:
-                self.wfile.write(fp.read())
+            if self.server.result_d:
+                if not esa:
+                    esa = next(self.server.result_d.iterkeys())
+                if esa in self.server.result_d:
+                    self.wfile.write('<script>e=%d;s=%d;a=%d;</script>\n' % (esa[0], esa[1], esa[2]))
+                    self.wfile.write('<h1>%s: Exam %d, Series %d, Acquisition %d (%s)</h1>\n' %
+                            (self.server.result_d[esa]['patient_id'],
+                             esa[0], esa[1], esa[2],
+                             self.server.result_d[esa]['series_description']))
+                    self.wfile.write('  <div id="main-container">\n')
+                    self.wfile.write('    <div id="legend"></div>\n')
+                    self.wfile.write('    <div id="graph-container">\n')
+                    self.wfile.write('      <div id="graph"></div>\n')
+                    self.wfile.write('      <div id="x_label">Time (seconds)</div>\n')
+                    #self.wfile.write('      <div id="y_label">Displacement (mm/deg)</div>\n')
+                    self.wfile.write('      <div id="slider"></div>\n')
+                    self.wfile.write('    </div>\n')
+                    self.wfile.write('  </div>\n')
+                    self.wfile.write('</div>\n')
+                    with open('plot.js') as fp:
+                        self.wfile.write(fp.read())
+                else:
+                    self.wfile.write('<h1>e/s/a %s not found</h1>\n' % str(esa))
+            else:
+                self.wfile.write('<h1>No data</h1>\n')
             self.wfile.write("</body></html>\n")
-
         elif path.startswith('/pub/'):
             # TODO: detect the appropriate mime type
             self.do_HEAD(mime_type="application/javascript")
@@ -360,20 +426,28 @@ class HttpHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             if os.path.isfile(filename):
                 with open(filename) as fp:
                     self.wfile.write(fp.read())
-
         elif path in ['/names','/names.json']:
             self.do_HEAD(mime_type="application/json")
             self.wfile.write(json.dumps(['Mean Displacement',
                 'Translation_X', 'Translation_Y', 'Translation_Z',
                 'Rotation_X', 'Rotation_Y', 'Rotation_Z']))
-
         elif path in ['/data','/data.json']:
             if qs and 'start' in qs:
                 start_ind = max(0, int(qs['start'][0]))
             else:
                 start_ind = 0
+            if qs and 'e' in qs and 's' in qs and 'a' in qs:
+                esa = (int(qs['e'][0]), int(qs['s'][0]), int(qs['a'][0]))
+            else:
+                esa = None
             self.do_HEAD(mime_type="application/json")
-            self.wfile.write(self.jsonify_result(self.server.result_d, start_ind))
+            if self.server.result_d:
+                if not esa:
+                    esa = next(self.server.result_d.iterkeys())
+                if esa in self.server.result_d:
+                    self.wfile.write(self.jsonify_result(self.server.result_d[esa], start_ind))
+                else:
+                    self.wfile.write(json.dumps({}))
 
     def do_POST(self):
         """Handle a post request."""
