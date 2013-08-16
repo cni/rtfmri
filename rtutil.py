@@ -33,22 +33,30 @@ class SeriesFinder(threading.Thread):
     def halt(self):
         self.alive = False
 
+    def is_timeseries(self, series_path):
+        filenames = self.scanner.get_file_list(series_path)
+        # Just grab the first one we find and check it
+        dcm = self.scanner.get_dicom(filenames[0])
+        if getattr(dcm, 'NumberOfTemporalPositions', 1) < 6:
+            print('Skipping series %d because it doesn''t look like a time series.' % int(dcm.SeriesNumber))
+            return False
+        else:
+            return True
+
     def run(self):
         while self.alive:
-            try:
-                if not self.cur_series_dir:
-                    # This is the first time, so load all the series in the latest exam.
-                    all_series = self.scanner.series_dirs()
-                    for k in sorted(all_series):
+            if not self.cur_series_dir:
+                # This is the first time, so load all the series in the latest exam.
+                all_series = self.scanner.series_dirs()
+                for k in sorted(all_series):
+                    if self.is_timeseries(all_series[k]):
                         self.series_queue.put(all_series[k])
-                    self.cur_series_dir = all_series[k]
-                else:
-                    latest_series_dir = self.scanner.series_dir()
-                    if latest_series_dir != self.cur_series_dir:
-                        self.cur_series_dir = latest_series_dir
-                        self.series_queue.put(latest_series_dir)
-            except:
-                print 'SeriesFinder: failed to get latest series dir from scanner.'
+                self.cur_series_dir = all_series[k]
+            else:
+                latest_series_dir = self.scanner.series_dir()
+                if latest_series_dir != self.cur_series_dir and self.is_timeseries(latest_series_dir):
+                    self.cur_series_dir = latest_series_dir
+                    self.series_queue.put(latest_series_dir)
             time.sleep(1)
 
 

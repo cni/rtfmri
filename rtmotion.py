@@ -49,7 +49,8 @@ if __name__ == '__main__':
                                 image_dir=args.dicomdir)
     scanner2 = rtclient.RTClient(hostname=args.hostname, username=args.username, password=args.password,
                                 image_dir=args.dicomdir)
-
+    scanner1.connect()
+    scanner2.connect()
     series_finder = rtutil.SeriesFinder(scanner1, series_q)
     dicom_finder = rtutil.IncrementalDicomFinder(scanner2, series_q, dicom_q)
     volumizer = rtutil.Volumizer(dicom_q, volume_q)
