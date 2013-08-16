@@ -28,9 +28,7 @@ class IncrementalDicomFinder(threading.Thread):
         self.dicom_queue = dicom_queue
         self.interval = interval
         self.alive = True
-        self.server_inum = 0
-        self.dicom_nums = []
-        self.dicom_search_start = 0
+        self.dicom_files = set()
         self.exam_num = None
         self.series_num = None
         self.acq_num = None
@@ -40,28 +38,18 @@ class IncrementalDicomFinder(threading.Thread):
     def halt(self):
         self.alive = False
 
-    def get_initial_filelist(self):
-        time.sleep(0.1)
+    def get_filelist(self):
+        #time.sleep(0.1)
         files = self.rtclient.get_file_list(self.series_path)
         files.sort()
         if files:
-            for fn in files:
-                spl = os.path.basename(fn).split('.')
-                current_inum = int(spl[0][1:])
-                if current_inum > self.server_inum:
-                    self.server_inum = current_inum
-                self.dicom_nums.append(int(spl[2]))
-            gaps = [x for x in range(max(self.dicom_nums)) if x not in self.dicom_nums]
-            gaps.remove(0)
-            if gaps:
-                self.dicom_search_start = min(gaps)
-            else:
-                self.dicom_search_start = max(self.dicom_nums)+1
             return files
         else:
             return False
 
     def check_dcm(self, dcm, verbose=True):
+        if dcm == None:
+            return False
         if not self.exam_num:
             self.exam_num = int(dcm.StudyID)
             self.series_num = int(dcm.SeriesNumber)
@@ -92,38 +80,15 @@ class IncrementalDicomFinder(threading.Thread):
             #print self.server_inum
             before_check = datetime.datetime.now()
             #print before_check
-
-            if self.server_inum == 0:
-                filenames = self.get_initial_filelist()
-                for fn in filenames:
-                    dcm = self.rtclient.get_dicom(fn)
-                    if self.check_dcm(dcm):
-                        self.dicom_queue.put(dcm)
-            else:
-                first_failure = False
-                ind_tries = [x for x in range(self.dicom_search_start, max(self.dicom_nums)+10) if x not in self.dicom_nums]
-                for d in ind_tries:
-                    try:
-                        current_filename = 'i'+str(self.server_inum+1)+'.MRDC.'+str(d)
-                        #print current_filename
-                        dcm = self.rtclient.get_dicom(os.path.join(self.series_dir, current_filename))
-                        if not len(dcm.PixelData) == 2 * dcm.Rows * dcm.Columns:
-                            print 'corruption error'
-                            print 'pixeldata: '+str(len(dcm.PixelData))
-                            print 'expected: '+str(2*dcm.Rows*dcm.Columns)
-                            raise Exception
-                    except:
-                        #print current_filename+', failed attempt'
-                        if not first_failure:
-                            self.dicom_search_start = d
-                            first_failure = True
-                    else:
-                        #print current_filename+', successful attempt'+'\n'
-                        if self.check_dcm(dcm):
-                            self.dicom_queue.put(dcm)
-                        self.dicom_nums.append(d)
-                        self.server_inum += 1
-                    time.sleep(self.interval)
+            
+            filenames = set(self.rtclient.get_file_list(self.series_path))
+            new_files = filenames - self.dicom_files
+            for fn in new_files:
+                dcm = self.rtclient.get_dicom(fn)
+                if self.check_dcm(dcm):
+                    self.dicom_queue.put(dcm)
+                    self.dicom_files.add(fn)
+            time.sleep(self.interval)
 
 
 class Volumizer(threading.Thread):
@@ -142,9 +107,27 @@ class Volumizer(threading.Thread):
         self.slices_per_volume = None
         self.completed_vols = 0
         self.vol_shape = None
+        self.reference_vol = None
+        self.reference_vol_num = 3
 
     def halt(self):
         self.alive = False
+
+    
+    def motion_correct_volume(self, volume):
+        correct_begin = time.time()
+        ref = self.reference_vol
+        img = volume
+        ref.shape += (1,) * (4 - ref.ndim)
+        img.shape += (1,) * (4 - img.ndim)
+        im4d = nib.Nifti1Image(np.concatenate((ref,img),axis=3), self.affine)
+        reg = nipy.algorithms.registration.FmriRealign4d(im4d, 'ascending', tr=2, time_interp=False)
+        reg.estimate(loops=1)
+        aligned_raw = reg.resample(0).get_data()[...,1]
+        correct_end = time.time()
+        print 'MOTIONCORRRECT TIME:', correct_end - correct_begin
+        return aligned_raw
+
 
     def run(self):
         dicoms = {}
@@ -154,7 +137,7 @@ class Volumizer(threading.Thread):
             try:
                 dcm = self.dicom_q.get(timeout=1)
             except queue.Empty:
-                pass
+		print 'VOLUMIZER: Dicom queue is empty.'
             else:
                 # convert incoming dicoms to 3D volumes
                 if self.slices_per_volume is None:
@@ -191,6 +174,14 @@ class Volumizer(threading.Thread):
                         for i,ind in enumerate(vol_inst_nums):
                             volume[:,:,i] = dicoms[ind].get_data()
                         volimg = nib.Nifti1Image(volume, self.affine)
+                        
+                        if self.completed_vols == self.reference_vol_num-1:
+                            self.reference_vol = volimg.get_data()
+
+                        if self.completed_vols > self.reference_vol_num:
+                            volimgdata = self.motion_correct_volume(volimg.get_data())
+                            volimg = nib.Nifti1Image(volimgdata,self.affine)
+
                         self.volume_q.put(volimg)
                         print 'VOLUME %03d COMPLETE in %0.2f seconds!' % (self.completed_vols, time.time()-base_time)
                         #nib.save(volimg,'/tmp/rtmc_volume_%03d.nii.gz' % self.completed_vols)

@@ -2,6 +2,7 @@
 #
 # @author:  Kiefer Katovich, Robert Dougherty, Gunnar Schaefer
 
+import os
 import Queue as queue
 import signal
 import argparse
@@ -11,6 +12,8 @@ import threading
 from socket import *
 import nibabel as nib
 import numpy as np
+from nibabel.nicom import dicomwrappers as dwrap
+import nipy.algorithms.registration
 
 import rtutil
 import rtclient
@@ -32,6 +35,7 @@ class MaskAveragePuller(threading.Thread):
         self.boolmask = np.zeros(mask_shape, np.bool)
         self.boolmask[:,:,:] = mask_data[:,:,:]
         self.affine = None
+        self.next_vol = 0
 
     def halt(self):
         # temp saver:
@@ -43,7 +47,7 @@ class MaskAveragePuller(threading.Thread):
 
     def run(self):
         vol_shape = None
-        next_vol = 0
+        self.next_vol = 0
         while self.alive:
             try:
                 volume = self.volume_q.get(timeout=1)
@@ -55,16 +59,19 @@ class MaskAveragePuller(threading.Thread):
                     vol_shape = np.shape(volume.get_data())
                     self.affine = volume.get_affine()
                 if self.whole_brain is None:
-                    self.whole_brain = np.zeros((vol_shape[0],vol_shape[1],vol_shape[2],100))
+                    self.whole_brain = np.zeros((vol_shape[0],vol_shape[1],vol_shape[2],1000))
                     self.whole_brain[:,:,:,0] = volume.get_data()
-                    next_vol = 1
+                    self.next_vol = 1
                 else:
-                    self.whole_brain[:,:,:,next_vol] = volume.get_data()
-                    next_vol += 1
+                    self.whole_brain[:,:,:,self.next_vol] = volume.get_data()
+                    self.next_vol += 1
                 print np.shape(self.whole_brain)
 
-                flat_volume_len = len(volume.get_data().flatten())
+                #flat_volume_len = len(volume.get_data().flatten())
+                flat_volume_len = np.sum(self.boolmask)
                 current_average = volume.get_data()[self.boolmask].sum()/flat_volume_len
+                #print 'SUM:', volume.get_data()[self.boolmask].sum(), 'VOXELS IN MASK:', flat_volume_len
+                #print 'AVERAGE ACT:', current_average
                 self.average_q.put(current_average)
         
         
@@ -81,6 +88,8 @@ class PullNifti(threading.Thread):
         self.brain_list = []
         self.affine = None
         self.next_vol = 0
+        self.reference_vol_num = 3
+        self.reference_vol = None
 
     def halt(self):
         # temp saver:
@@ -96,11 +105,27 @@ class PullNifti(threading.Thread):
         nib.save(test_image, 'partial_nifti.nii')
         self.alive = False
 
+    def motion_correct_volume(self, volume):
+        correct_begin = time.time()
+        ref = self.reference_vol
+        img = volume
+        ref.shape += (1,) * (4 - ref.ndim)
+        img.shape += (1,) * (4 - img.ndim)
+        im4d = nib.Nifti1Image(np.concatenate((ref,img),axis=3), self.reference_vol.get_affine())
+        reg = nipy.algorithms.registration.FmriRealign4d(im4d, 'ascending', time_interp=False)
+        reg.estimate(loops=1)
+        aligned_raw = reg.resample(0).get_data()[...,1]
+        correct_end = time.time()
+        print 'MOTIONCORRRECT TIME:', correct_begin-correct_end
+        return aligned_raw
+
     def run(self):
         vol_shape = None
         while self.alive:
             try:
                 volume = self.volume_q.get(timeout=1)
+                if self.next_vol == self.reference_vol_num:
+                    self.reference_vol = volume.get_data()
             except queue.Empty:
                 pass
             else:
@@ -112,19 +137,24 @@ class PullNifti(threading.Thread):
                     self.whole_brain[:,:,:,0] = volume.get_data()
                     self.next_vol = 1
                 else:
+                    #if self.next_vol <= self.reference_vol:
                     self.whole_brain[:,:,:,self.next_vol] = volume.get_data()
-                    sefl.next_vol += 1
-                    print next_vol
+                    #else:
+                    #    corrected = self.motion_correct_volume(volume.get_data())
+                    #    self.whole_brain[:,:,:,self.next_vol] = corrected
+                        
+                    self.next_vol += 1
+                    #print self.next_vol
 		try:
                     os.remove('complete_nifti.nii')
 		except:
                     pass
         self.whole_brain = self.whole_brain[:,:,:,:self.next_vol]
-        print np.shape(self.whole_brain)
+        #print np.shape(self.whole_brain)
         image_save = nib.nifti1.Nifti1Image(self.whole_brain, self.affine)
         nib.save(image_save, 'complete_nifti.nii')
 
-
+'''
 class NeurofeedbackSocket(threading.Thread):
 
     def __init__(self, average_q, parameter_file):
@@ -132,7 +162,7 @@ class NeurofeedbackSocket(threading.Thread):
         self.average_q = average_q
         self.alive = True
 
-        self.act = [].insert(0,0)
+        self.act = [(0,0)]
         self.count = 0
         self.trial = 0
         self.message, self.colors, self.onsets = [], [], []
@@ -145,10 +175,10 @@ class NeurofeedbackSocket(threading.Thread):
         self.tmp = self.params[0].split(' ')
         self.nTR = int(self.tmp[1])
         self.tmp = self.params[1].split(' ')
-        self.waitTime = int(self.tmp[0])
+        #self.waitTime = int(self.tmp[0])
         self.nEvent = int(self.params[3])
 
-        for i in range(nEvent):
+        for i in range(self.nEvent):
             self.cur = self.params[4 + i].split(' ')
             self.onsets.insert(i + 1, int(self.cur[0]))
             self.colors.insert(i, ";" + self.cur[1] + ";" + self.cur[2] + ";" + self.cur[3] +";")
@@ -178,16 +208,18 @@ class NeurofeedbackSocket(threading.Thread):
         self.conn.send("n " + str(self.nTR - self.waitTime + 1) + "\n")
         while self.alive:
             try:
-                average = self.average_q.get(timeout=3)
+                average = self.average_q.get()
+                print 'average:', average
             except queue.Empty:
+                print 'closing socket'
                 self.conn.close()
                 self.sock.close()
             else:
-                if (self.count >= self.waitTime):
-                    self.conn.send("m " + self.message[self.trial] + "\n")
-                    self.conn.send("c " + self.colors[self.trial] + "\n")
-                    self.conn.send("d " + str(self.onsets[self.trial + 1] - self.onsets[self.trial]) + "\n")
-                    self.trial = self.trial + 1
+                #if (self.count >= self.waitTime):
+                self.conn.send("m " + self.message[self.trial] + "\n")
+                self.conn.send("c " + self.colors[self.trial] + "\n")
+                self.conn.send("d " + str(self.onsets[self.trial + 1] - self.onsets[self.trial]) + "\n")
+                self.trial = self.trial + 1
 
                 curAct = "a "+str(average) +"\n"
                 dummyglobal = "g 0.01\n"
@@ -195,8 +227,97 @@ class NeurofeedbackSocket(threading.Thread):
                 self.conn.send(curAct)
                 self.conn.send(dummyglobal)
 
-            self.act.insert(count+1,0)
+            self.act.append((self.count,curAct))
             self.count = self.count+1
+'''
+class NeurofeedbackSocket(threading.Thread):
+
+	def __init__(self, average_q, parameter_file, tr_length):
+        	super(NeurofeedbackSocket, self).__init__()
+        	self.average_q = average_q
+        	self.alive = True
+        	self.tr_length = tr_length
+        	self.checkpoint = 0.0
+		
+		self.act = [0]
+        	self.count = 0
+        	self.trial = 0
+        	self.message, self.colors, self.onsets = [], [], []
+        	self.setup_parameters(parameter_file)
+        	
+        	self.setup_socket()
+        
+  	def setup_parameters(self, parameter_file):
+  		print os.getcwd()
+  		self.params = open(parameter_file).read().split('\n')
+		self.tmp = self.params[0].split(' ')
+		self.nTR = int(self.tmp[1])
+		self.tmp = self.params[1].split(' ')
+		self.waitTime = int(self.tmp[0])
+		self.nEvent = int(self.params[3])
+	
+		for i in range(self.nEvent):
+			self.cur = self.params[4 + i].split(' ')
+			self.onsets.insert(i + 1, int(self.cur[0]))
+			self.colors.insert(i, ";" + self.cur[1] + ";" + self.cur[2] + ";" + self.cur[3] +";")
+			self.tmp = self.cur[4]
+			self.message.insert(i, self.tmp[2:-1])
+	
+		self.onsets.insert(i + 1, self.onsets[i] + 1)
+		
+	
+	def setup_socket(self):
+		self.serverHost = 'localhost'
+		self.serverPort = 8888
+		self.sock = socket(AF_INET, SOCK_STREAM)
+		self.sock.bind((self.serverHost, self.serverPort))
+		self.sock.listen(1)
+		print "waiting for display connection..."
+		self.conn, self.addr = self.sock.accept()
+		print "got it!"
+	
+        
+    	def halt(self):
+    		self.alive = False
+                self.sock.close()
+    		self.conn.close()
+    	
+    	def run(self):
+		start_t = time.time()
+    		self.conn.send("n " + str(self.nTR - self.waitTime + 1) + "\n")
+    		while self.alive:
+			#while (time.time() - start_t) < self.checkpoint:
+			#	pass
+    			try:
+    				average = self.average_q.get()
+                                #print average
+    			except queue.Empty:
+                            print 'killing queue'
+                            self.conn.close()
+                            self.sock.close()
+                            self.alive = False
+			else:
+				#if (self.count >= self.waitTime):
+                            self.conn.send("m " + self.message[self.trial] + "\n")
+                            self.conn.send("c " + self.colors[self.trial] + "\n")
+                            self.conn.send("d " + str(self.onsets[self.trial + 1] - self.onsets[self.trial]) + "\n")
+                            self.trial = self.trial + 1
+				
+                            curAct = "a "+str(average) +"\n"
+                            dummyglobal = "g 0.01\n"
+                            print 'act: ', curAct
+                            self.conn.send(curAct)
+                            self.conn.send(dummyglobal)
+			
+
+                            self.act.append(curAct)
+                            self.count = self.count+1
+                            print 'SOCKET QUEUE COUNT:', self.count
+                            self.checkpoint += self.tr_length
+                            print 'CHECKPOINT TIME:', self.checkpoint
+
+
+
 
 
 class ArgumentParser(argparse.ArgumentParser):
@@ -251,10 +372,17 @@ if __name__ == '__main__':
         print('')
         go = raw_input('Hit it when you''re ready:')
 
-        series_dir = scanner.series_dir(exam_dir)
-        print series_dir
-        if not series_dir:
+        old_series_dir = scanner.series_dir(exam_dir)
+        print old_series_dir
+        if not old_series_dir:
             assert(false)
+
+        new_series_dir = old_series_dir
+        while new_series_dir == old_series_dir:
+            new_series_dir = scanner.series_dir(exam_dir)
+            time.sleep(0.1)
+
+        series_dir = new_series_dir
 
         dicom_finder = rtutil.IncrementalDicomFinder(scanner, series_dir, dicom_q, result_d)
         volumizer = rtutil.Volumizer(dicom_q, volume_q, result_d)
@@ -288,7 +416,7 @@ if __name__ == '__main__':
             mask_filename = args.maskfile
         else:
             mask_name = raw_input('name of mask file: ')
-            mask_filename = glob.glob(mask_name)[0]
+            mask_filename = glob.glob(mask_name+'*')[0]
         if mask_filename:
             [maskdata,maskaffine,maskshape] = load_mask_nifti(mask_filename)
         else:
@@ -298,7 +426,7 @@ if __name__ == '__main__':
             parameter_file = args.paramfile
         else:
             param_name = raw_input('name of parameter file: ')
-            parameter_file = glob.glob(param_name)[0]
+            parameter_file = glob.glob(param_name+'*')[0]
 
         scanner = rtclient.RTClient(hostname=args.hostname, username=args.username, password=args.password,image_dir=args.dicomdir)
 
@@ -312,27 +440,37 @@ if __name__ == '__main__':
         print('')
         go = raw_input('Hit it when you''re ready:')
 
-        series_dir = scanner.series_dir(exam_dir)
-        print series_dir
-        if not series_dir:
+        old_series_dir = scanner.series_dir(exam_dir)
+        print old_series_dir
+        if not old_series_dir:
             assert(false)
 
-        dicom_finder = rtutil.IncrementalDicomFinder(scanner, series_dir, dicom_q, result_d)
+        #dicom_finder = rtutil.IncrementalDicomFinder(scanner, series_dir, dicom_q, result_d)
         volumizer = rtutil.Volumizer(dicom_q, volume_q, result_d)
-        analyzer = FmriAnalyzer(volume_q, average_q, maskdata, maskshape)
-        neurosocket = NeurofeedbackSocket(average_q, parameter_file)
+        analyzer = MaskAveragePuller(volume_q, average_q, maskdata, maskshape)
+        neurosocket = NeurofeedbackSocket(average_q, parameter_file, 2.0)
+
+        # wait for new folder
+        new_series_dir = old_series_dir
+        while new_series_dir == old_series_dir:
+            new_series_dir = scanner.series_dir(exam_dir)
+            time.sleep(0.1)
+        series_dir = new_series_dir
+
+        dicom_finder = rtutil.IncrementalDicomFinder(scanner, series_dir, dicom_q, result_d)
+        
 
         def term_handler(signum, stack):
             print 'Receieved SIGTERM - shutting down...'
             dicom_finder.halt()
-            volumizer.halt()
             analyzer.halt()
             neurosocket.halt()
+            volumizer.halt()
             print 'Asked all threads to terminate'
             dicom_finder.join()
-            volumizer.join()
             analyzer.join()
             neurosocket.join()
+            volumizer.join()
             print 'Process complete'
             sys.exit(0)
 
@@ -344,6 +482,6 @@ if __name__ == '__main__':
         analyzer.start()
         neurosocket.start()
 
-        while True: time.sleep(60)  # stick around to receive and process signals
+        while True: time.sleep(10)  # stick around to receive and process signals
 
 
