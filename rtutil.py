@@ -1,4 +1,3 @@
-
 import datetime
 import time
 import os
@@ -272,11 +271,11 @@ class Analyzer(threading.Thread):
                         # get the full affine for this volume by pre-multiplying by the reference affine
                         mc_affine = np.dot(self.ref_vol['img'].get_affine(), T.as_affine())
                         # Compute the error matrix
-                        T_error = self.ref_vol['img'].get_affine() - mc_affine
+                        T_error = T.as_affine() - np.eye(4)
                         A = np.matrix(T_error[0:3,0:3])
                         t = np.matrix(T_error[0:3,3]).T
                         # radius of the spherical head assumption (in mm):
-                        R = 70.
+                        R = 80.
                         # The center of the volume. Assume 0,0,0 in world coordinates.
                         xc = np.matrix((0,0,0)).T
                         mean_disp = np.sqrt( R**2. / 5 * np.trace(A.T * A) + (t + A*xc).T * (t + A*xc) ).item()
