@@ -10,7 +10,7 @@ The system tries to pull dicoms from the scanner as fast as possible, ideally ju
 
 History
 -------
-The project was started with a multi-threading skeleton by Gunnar Schaefer. Kiefer Katovich then built the current system on top of this and got the basic process working. Bob Dougherty trimmed the code down and incorporated nipy realignment tools to make a simple real-time subject motion tracker.
+The project was started with a multi-threading skeleton by Gunnar Schaefer. Kiefer Katovich then built the current system on top of this and got the basic process working. Bob Dougherty refactored the dicom finder to use a more robust ftp-based method and incorporated nipy realignment tools to make a simple real-time subject motion tracker.
 
 License
 -------
