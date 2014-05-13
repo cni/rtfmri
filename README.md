@@ -12,6 +12,10 @@ History
 -------
 The project was started with a multi-threading skeleton by Gunnar Schaefer. Kiefer Katovich then built the current system on top of this and got the basic process working. Bob Dougherty refactored the dicom finder to use a more robust ftp-based method and incorporated nipy realignment tools to make a simple real-time subject motion tracker.
 
+Getting started
+-------
+See rtmotion.py for a high-level overview of how to set up a mutithreaded real-time app. rtfmri.py is a little more complex example for doung real-time fMRI for neuro-feedback.
+
 License
 -------
 Copyright (c) 2012 Gunnar Schaefer
