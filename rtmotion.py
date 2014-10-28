@@ -45,6 +45,8 @@ if __name__ == '__main__':
     dicom_q = queue.Queue()
     volume_q = queue.Queue()
     result_d = {}
+    # We use two ftp connections, one for the series_finder thread and one for the dicom_finder thread,
+    # so they don't interfere with each other.
     scanner1 = rtclient.RTClient(hostname=args.hostname, username=args.username, password=args.password,
                                 image_dir=args.dicomdir)
     scanner2 = rtclient.RTClient(hostname=args.hostname, username=args.username, password=args.password,
