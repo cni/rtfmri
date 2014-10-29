@@ -3,6 +3,14 @@
 # @author:  Robert Dougherty, Kiefer Katovich, Gunnar Schaefer
 
 """
+To test this code without a scanner, start the scan simulator:
+
+
+
+Then run this with appropriate args:
+
+    ./rtmotion.py -u anonymous -p foo -o localhost -d test_data -f 2121
+
 Refactor:
     * Add a thread to find new exams/series and queue them up for dicomFinder thread
     * Dicom finder just keeps pushing dicoms to the dicom queue
@@ -34,8 +42,9 @@ if __name__ == '__main__':
     arg_parser.add_argument('-p', '--password', help='scanner ftp password')
     arg_parser.add_argument('-o', '--hostname', default='cnimr', help='scanner hostname or ip address (default: cnimr)')
     arg_parser.add_argument('-d', '--dicomdir', default='/export/home1/sdc_image_pool/images', help='path to dicom file store on the scanner (default: /export/home1/sdc_image_pool/images)')
+    arg_parser.add_argument('-f', '--ftpport', type=int, default=21, help='scanner FTP port (default: 21)')
     arg_parser.add_argument('-i', '--interval', type=float, default=1.0, help='interval between checking for new files')
-    arg_parser.add_argument('-r', '--port', type=int, default=8080, help='port to serve the results')
+    arg_parser.add_argument('-r', '--port', type=int, default=8080, help='port to serve the results (default: 8080)')
     arg_parser.add_argument('-n', '--nskip', type=int, default=2, help='number of volumes to skip (default=2)')
     args = arg_parser.parse_args()
 
@@ -46,9 +55,9 @@ if __name__ == '__main__':
     # We use two ftp connections, one for the series_finder thread and one for the dicom_finder thread,
     # so they don't interfere with each other.
     scanner1 = rtclient.RTClient(hostname=args.hostname, username=args.username, password=args.password,
-                                image_dir=args.dicomdir)
+                                image_dir=args.dicomdir, port=args.ftpport)
     scanner2 = rtclient.RTClient(hostname=args.hostname, username=args.username, password=args.password,
-                                image_dir=args.dicomdir)
+                                image_dir=args.dicomdir, port=args.ftpport)
     scanner1.connect()
     scanner2.connect()
     series_finder = rtutil.SeriesFinder(scanner1, series_q, interval=args.interval)

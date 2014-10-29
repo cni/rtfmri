@@ -9,8 +9,9 @@ class RTClient():
     Class for talking to a GE scanner in real-time.
     """
 
-    def __init__(self, hostname='cnimr', username='', password='', image_dir='/export/home1/sdc_image_pool/images'):
+    def __init__(self, hostname='cnimr', username='', password='', image_dir='/export/home1/sdc_image_pool/images', port=21):
         self.hostname = hostname
+        self.port = port
         self.username = username
         self.password = password
         self.image_dir = image_dir
@@ -23,9 +24,11 @@ class RTClient():
                 self.ftp.voidcmd('NOOP')
             except:
                 self.ftp.close()
-                self.ftp = FTP(self.hostname, user=self.username, passwd=self.password)
-        else:
-            self.ftp = FTP(self.hostname, user=self.username, passwd=self.password)
+                self.ftp = None
+        if not self.ftp:
+            self.ftp = FTP()
+            self.ftp.connect(host=self.hostname, port=self.port)
+            self.ftp.login(user=self.username, passwd=self.password)
 
     def close(self):
         if self.ftp:
@@ -130,7 +133,10 @@ class RTClient():
         # If we need to worry about partial files, then we should use listdir and check file sizes.
         # But that is really slow.
         self.connect()
-        return self.ftp.nlst(series_dir)
+        files = self.ftp.nlst(series_dir)
+        if files[0][0]!='/':
+            files = [os.path.join(series_dir,f) for f in files]
+        return files
 
     def get_file(self, filename):
         buf = cStringIO.StringIO()
