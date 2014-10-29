@@ -5,7 +5,7 @@
 """
 To test this code without a scanner, start the scan simulator:
 
-
+    ./rt_ftp_test_server.py
 
 Then run this with appropriate args:
 
