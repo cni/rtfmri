@@ -139,4 +139,4 @@ class RTClient():
         return buf
 
     def get_dicom(self, filename):
-        return dicom.ReadFile(self.get_file(filename))
+        return dicom.filereader.read_file(self.get_file(filename))

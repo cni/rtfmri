@@ -4,7 +4,6 @@
 
 import Queue as queue
 import signal
-import argparse
 import sys
 import time
 import threading
@@ -148,24 +147,6 @@ class NeurofeedbackSocket(threading.Thread):
             self.count = self.count+1
 
 
-class ArgumentParser(argparse.ArgumentParser):
-
-    def __init__(self):
-        super(ArgumentParser, self).__init__(formatter_class=argparse.RawTextHelpFormatter)
-        self.description  = ('Real-time fMRI tools. Gets dicoms from the most recent series, builds volumes\n'
-                             'from them, and computes motion parameters for timeseries scans. Dicoms are pulled\n'
-                             'from the scanner via ftp. Use ctrl-c to terminate (it might take a moment for all\n'
-                             'the threads to die).\n\n')
-        self.add_argument('-u', '--username', help='scanner ftp username')
-        self.add_argument('-p', '--password', help='scanner ftp password')
-        self.add_argument('-o', '--hostname', default='cnimr', help='scanner hostname or ip address')
-        self.add_argument('-d', '--dicomdir', default='/export/home1/sdc_image_pool/images', help='path to dicom file store on the scanner')
-        self.add_argument('-i', '--interval', type=float, default=1.0, help='interval between checking for new files')
-        self.add_argument('-s', '--seriesdir', default=None, help='series directory to use (will default to most recent series)')
-        self.add_argument('-m', '--maskfile', default=None, help='mask file to use for analysis (will prompt if not provided)')
-        self.add_argument('-r', '--paramfile', default=None, help='parameter file to use for analysis (prompt if not provided)')
-
-
 def load_mask_nifti(nifti):
     image = nib.load(nifti)
     shape = image.get_shape()
@@ -174,10 +155,24 @@ def load_mask_nifti(nifti):
     return [idata,affine,shape]
 
 
-import glob
-
 if __name__ == '__main__':
-    args = ArgumentParser().parse_args()
+    import glob
+    import argparse
+
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.description  = ('Real-time fMRI tools. Gets dicoms from the most recent series, builds volumes\n'
+                               'from them, and computes motion parameters for timeseries scans. Dicoms are pulled\n'
+                               'from the scanner via ftp. Use ctrl-c to terminate (it might take a moment for all\n'
+                               'the threads to die).\n\n')
+    arg_parser.add_argument('-u', '--username', help='scanner ftp username')
+    arg_parser.add_argument('-p', '--password', help='scanner ftp password')
+    arg_parser.add_argument('-o', '--hostname', default='cnimr', help='scanner hostname or ip address (default: cnimr)')
+    arg_parser.add_argument('-d', '--dicomdir', default='/export/home1/sdc_image_pool/images', help='path to dicom file store on the scanner (default: /export/home1/sdc_image_pool/images')
+    arg_parser.add_argument('-i', '--interval', type=float, default=1.0, help='interval between checking for new files')
+    arg_parser.add_argument('-s', '--seriesdir', default=None, help='series directory to use (will default to most recent series)')
+    arg_parser.add_argument('-m', '--maskfile', default=None, help='mask file to use for analysis (will prompt if not provided)')
+    arg_parser.add_argument('-r', '--paramfile', default=None, help='parameter file to use for analysis (prompt if not provided)')
+    args = arg_parser.parse_args()
 
     dicom_q = queue.Queue()
     volume_q = queue.Queue()

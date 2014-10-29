@@ -11,7 +11,6 @@ from cgi import parse_header, parse_multipart
 from urlparse import parse_qs
 
 import numpy as np
-import dicom
 import nibabel as nib
 #from nibabel.nicom import dicomwrappers as dwrap
 import nipy.algorithms.registration
@@ -22,12 +21,13 @@ class SeriesFinder(threading.Thread):
     them onto the series queue.
     """
 
-    def __init__(self, scanner, series_queue):
+    def __init__(self, scanner, series_queue, interval):
         super(SeriesFinder, self).__init__()
         self.series_queue = series_queue
         self.cur_series_dir = None
         self.scanner = scanner
         self.alive = True
+        self.interval = interval
 
     def halt(self):
         self.alive = False
@@ -56,7 +56,7 @@ class SeriesFinder(threading.Thread):
                 if latest_series_dir != self.cur_series_dir and self.is_timeseries(latest_series_dir):
                     self.cur_series_dir = latest_series_dir
                     self.series_queue.put(latest_series_dir)
-            time.sleep(1)
+            time.sleep(self.interval)
 
 
 class IncrementalDicomFinder(threading.Thread):
@@ -258,7 +258,7 @@ class Analyzer(threading.Thread):
                         actualstdout = sys.stdout
                         sys.stdout = open(os.devnull,'w')
                         im4d = nib.Nifti1Image(np.concatenate((ref, img), axis=3), self.ref_vol['img'].get_affine())
-                        reg = nipy.algorithms.registration.FmriRealign4d(im4d, 'ascending', time_interp=False)
+                        reg = nipy.algorithms.registration.Realign4d(im4d, 1., None, None, nipy.algorithms.registration.Rigid)
                         reg.estimate(loops=2)
                         T = reg._transforms[0][1]
                         aligned_raw = reg.resample(0).get_data()[...,1]

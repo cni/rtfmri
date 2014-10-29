@@ -1,6 +1,6 @@
 
 <script>
-var update_interval = 1000;
+var update_interval = 2000;
 var graph;
 graph = new Rickshaw.Graph.Ajax( {
   	element: document.querySelector("#graph"),
