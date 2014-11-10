@@ -136,38 +136,33 @@ class ScannerClient(object):
         series_dirs = [op.join(exam_dir, n) for t, s, n in exam_contents]
         return series_dirs
 
-    def series_info(self, exam_dir=None):
-        """Return a dicts with information for all series from an exam."""
-        if exam_dir is None:
-            exam_dir = self.latest_exam
+    def series_info(self, series_dir=None):
+        """Return a dicts with information about a series."""
+        if series_dir is None:
+            series_dir = self.latest_series
 
-        # Get the list of series directories for this exam
-        series_dirs = self.series_dirs(exam_dir)
+        # Get a list of all the files for this series
+        series_files = self.list_dir(series_dir)
 
-        # Iterate over the files and build a list of dictionaries
-        series_info = []
-        for path in series_dirs:
+        # This directory could be empty
+        if not series_files:
+            return {}
 
-            # Get a list of all the files for this series
-            series_files = self.list_dir(path)
+        # Build the dictionary based off the first DICOM in the list
+        _, _, filename = series_files[0]
+        dicom_path = op.join(series_dir, filename)
+        first_dicom = self.retrieve_dicom(dicom_path)
+        dicom_timestamp = first_dicom.StudyDate + first_dicom.StudyTime
+        n_timepoints = getattr(first_dicom, "NumberOfTemporalPositions", 1)
 
-            # This directory could be empty
-            if not series_files:
-                continue
-
-            # Build the dictionary based off the first DICOM in the list
-            _, _, filename = series_files[0]
-            dicom_path = op.join(path, filename)
-            first_dicom = self.retrieve_dicom(dicom_path)
-            dicom_timestamp = first_dicom.StudyDate + first_dicom.StudyTime
-            dicom_info = {"Dicomdir": path,
-                          "DateTime": datetime.strptime(dicom_timestamp,
-                                                        "%Y%m%d%H%M%S"),
-                          "Series": first_dicom.SeriesNumber,
-                          "Description": first_dicom.SeriesDescription,
-                          "NumAcquisitions": len(series_files),
-                          }
-            series_info.append(dicom_info)
+        series_info = {
+            "Dicomdir": series_dir,
+            "DateTime": datetime.strptime(dicom_timestamp, "%Y%m%d%H%M%S"),
+            "Series": first_dicom.SeriesNumber,
+            "Description": first_dicom.SeriesDescription,
+            "NumTimepoints": n_timepoints,
+            "NumAcquisitions": len(series_files),
+            }
 
         return series_info
 
