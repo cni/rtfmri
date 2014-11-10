@@ -117,8 +117,28 @@ class TestScannerClient(object):
         for path, (_, _, name) in zip(path_list, file_list):
             nt.assert_equal(path, op.join(exam_dir, name))
 
+    def test_series_info(self):
+
+        if self.no_server:
+            raise SkipTest
+
+        series_dirs = self.client.series_dirs()
+        series_info = self.client.series_info()
+
+        n_series = len([p for p in series_dirs if self.client.list_dir(p)])
+        nt.assert_equal(len(series_info), n_series)
+
+        for item in series_info:
+            nt.assert_is_instance(item, dict)
+            nt.assert_equal(set(item.keys()),
+                            {"DateTime", "Description",
+                             "Dicomdir", "NumAcquisitions", "Series"})
+            nt.assert_in(item["Dicomdir"], series_dirs)
+            nt.assert_equal(item["NumAcquisitions"],
+                            len(self.client.list_dir(item["Dicomdir"])))
+
     def test_file_retrieval(self):
-        
+
         if self.no_server:
             raise SkipTest
 

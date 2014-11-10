@@ -106,7 +106,7 @@ class ScannerClient(object):
         """Return a path to the most recent entry in `dir`."""
         contents = self.list_dir(dir)
 
-        # Contents should be sorted, so we want first entry
+        # Contents should be sorted, so we want last entry
         latest_name = contents[-1][-1]
 
         # Build and return the full path
