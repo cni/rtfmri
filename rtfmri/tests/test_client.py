@@ -28,6 +28,12 @@ class TestScannerClient(object):
                                           base_dir=cls.base_dir)
         cls.no_server = cls.client.ftp is None
 
+    @classmethod
+    def teardown_class(cls):
+
+        if cls.client.ftp is not None:
+            cls.client.close()
+
     def test_ftp_connection(self):
 
         if self.no_server:
