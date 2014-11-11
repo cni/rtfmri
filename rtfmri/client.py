@@ -136,6 +136,16 @@ class ScannerClient(object):
         series_dirs = [op.join(exam_dir, n) for t, s, n in exam_contents]
         return series_dirs
 
+    def series_files(self, series_dir=None):
+        """Return a list of all files for a series."""
+        if series_dir is None:
+            series_dir = self.latest_series
+
+        # Get the list of entries in the exam dir
+        series_contents = self.list_dir(series_dir)
+        series_dirs = [op.join(series_dir, n) for t, s, n in series_contents]
+        return series_dirs
+
     def series_info(self, series_dir=None):
         """Return a dicts with information about a series."""
         if series_dir is None:

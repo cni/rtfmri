@@ -123,6 +123,19 @@ class TestScannerClient(object):
         for path, (_, _, name) in zip(path_list, file_list):
             nt.assert_equal(path, op.join(exam_dir, name))
 
+    def test_series_files(self):
+
+        if self.no_server:
+            raise SkipTest
+
+        series_dir = self.client.latest_series
+        file_list = self.client.list_dir(series_dir)
+        path_list = self.client.series_files(series_dir)
+
+        # File list and path list should match
+        for path, (_, _, name) in zip(path_list, file_list):
+            nt.assert_equal(path, op.join(series_dir, name))
+
     def test_series_info(self):
 
         if self.no_server:
