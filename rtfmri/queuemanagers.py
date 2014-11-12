@@ -1,21 +1,11 @@
-"""Contains classes to organize information we're getting from the scanner.
-
-"""
+"""Thread-based objects that manage data as it arrives from the scanner."""
 from __future__ import print_function
 from threading import Thread
 from time import sleep
 
 
 class Finder(Thread):
-    """An object that is both a Thread and a Queue, sort of.
-
-    You can't just multiple inherit from both Thread and Queue
-    because both objects have a ``join`` method. Instead, use
-    inheritance to extend ``threading.Thread`` and then add some
-    methods that turn around and update an internally-tracked
-    ``Queue.Queue`` object.
-
-    """
+    """Base class that uses a slightly different approach to thread control."""
     def __init__(self, interval):
         """Initialize the Finder."""
         super(Finder, self).__init__()
@@ -135,6 +125,5 @@ class DicomFinder(Finder):
                 # the next series, we don't need to track these any more
                 # and this keeps it from growing too large
                 self.dicom_files = set()
-                
 
             sleep(self.interval)

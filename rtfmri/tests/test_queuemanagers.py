@@ -1,17 +1,17 @@
 from __future__ import print_function
-from Queue import Queue, Empty
+from Queue import Queue
 
 from nose import SkipTest
 import nose.tools as nt
 
-from .. import client, queues
+from .. import client, queuemanagers as qm
 
 
 class TestFinder(object):
 
     def test_control(self):
 
-        f = queues.Finder(interval=2)
+        f = qm.Finder(interval=2)
         assert f.alive
 
         f.halt()
@@ -49,7 +49,7 @@ class TestFinders(object):
             raise SkipTest
 
         q = Queue()
-        f = queues.SeriesFinder(self.client, q)
+        f = qm.SeriesFinder(self.client, q)
         f.start()
 
         # We want to be able to stop the thead when tests fail
@@ -72,7 +72,7 @@ class TestFinders(object):
         series_q.put(self.client.latest_series)
 
         dicom_q = Queue()
-        f = queues.SeriesFinder(self.client, series_q, dicom_q)
+        f = qm.SeriesFinder(self.client, series_q, dicom_q)
         f.start()
 
         # We want to be able to stop the thead when tests fail

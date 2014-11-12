@@ -1,2 +1,2 @@
 from client import ScannerClient
-from queues import SeriesFinder, DicomFinder
+from queuemanagers import SeriesFinder, DicomFinder
