@@ -2,10 +2,7 @@
 
 """
 from __future__ import print_function
-import os.path as op
-from Queue import Queue, Empty
 from threading import Thread
-from datetime import datetime
 from time import sleep
 
 
@@ -53,7 +50,7 @@ class SeriesFinder(Finder):
         self.alive = False
 
     def run(self):
-
+        """This function gets looped over repetedly while thread is alive."""
         while self.alive:
 
             if self.current_series is None:
@@ -98,29 +95,24 @@ class DicomFinder(Finder):
         self.series_q = series_q
         self.dicom_q = dicom_q
 
+        # We'll want to keep track of the current series
+        self.current_series = None
+
         # A set to keep track of files we've added onto the queue
         # (This is needed because we'll likely be running over the same
         # series directory multiple times, so we need to know what's in
-        # the queue. We use a set because the relevant operations are
+        # the queue). We use a set because the relevant operations are
         # quite a bit faster than they would be with lists.
         self.dicom_files = set()
 
-        # TODO we'll need to find a way to flush the dicom_files set if
-        # we want to let the realtime code be persistent, otherwise it
-        # will get quite large. Perhaps we can just track dicom files for
-        # each series?
-
     def run(self):
-
+        """This function gets looped over repetedly while thread is alive."""
         while self.alive:
 
-            if not self.series_q.empty():
-
-                # Grab the next series path off the queue
-                series_path = self.series_q.get()
+            if self.current_series is not None:
 
                 # Find all the dicom files in this series
-                series_files = self.scanner.series_files(series_path)
+                series_files = self.scanner.series_files(self.current_series)
 
                 # Compare against the set of files we've already placed
                 # in the queue, keep only the new ones
@@ -133,5 +125,16 @@ class DicomFinder(Finder):
 
                 # Update the set of files on the queue
                 self.dicom_files.update(set(new_files))
+
+            if not self.series_q.empty():
+
+                # Grab the next series path off the queue
+                self.current_series = self.series_q.get()
+
+                # Reset the set of dicom files. Once we've moved on to
+                # the next series, we don't need to track these any more
+                # and this keeps it from growing too large
+                self.dicom_files = set()
+                
 
             sleep(self.interval)
