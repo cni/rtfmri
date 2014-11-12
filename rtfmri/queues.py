@@ -9,7 +9,7 @@ from datetime import datetime
 from time import sleep
 
 
-class ThreadedQueue(Thread):
+class Finder(Thread):
     """An object that is both a Thread and a Queue, sort of.
 
     You can't just multiple inherit from both Thread and Queue
@@ -19,39 +19,38 @@ class ThreadedQueue(Thread):
     ``Queue.Queue`` object.
 
     """
-    def __init__(self):
-        """Initialize the queue."""
-        super(ThreadedQueue, self).__init__()
+    def __init__(self, interval):
+        """Initialize the Finder."""
+        super(Finder, self).__init__()
+
+        self.interval = interval
         self.alive = True
-        self._queue = Queue()
 
     def halt(self):
         """Make it so the thread will halt within a run method."""
         self.alive = False
 
-    def put(self, *args, **kwargs):
-        """Put an object into the internal queue."""
-        return self._queue.put(*args, **kwargs)
 
-    def get(self, *args, **kwargs):
-        """Get an object into the internal queue."""
-        return self._queue.get(*args, **kwargs)
+class SeriesFinder(Finder):
+    """Manage a queue of series directories on the scanner.
 
-
-class SeriesQueue(ThreadedQueue):
-    """Expose a queue of series directories on the scanner.
-
-    This queue will only be populated with series that look like they
+    The queue will only be populated with series that look like they
     are timeseries, because that is what is useful for real-time analysis.
 
     """
-    def __init__(self, scanner, interval=1):
+    def __init__(self, scanner, queue, interval=1):
         """Initialize the queue."""
-        super(SeriesQueue, self).__init__()
+        super(SeriesFinder, self).__init__(interval)
 
         self.scanner = scanner
         self.current_series = None
-        self.interval = interval
+
+        self.queue = queue
+        self.alive = True
+
+    def halt(self):
+        """Make it so the thread will halt within a run method."""
+        self.alive = False
 
     def run(self):
 
@@ -60,7 +59,7 @@ class SeriesQueue(ThreadedQueue):
             if self.current_series is None:
                 # Load up all series for the current exam
                 for series in self.scanner.series_dirs():
-                    self.put(series)
+                    self.queue.put(series)
                 self.current_series = series
             else:
                 # Only do anything if there's a new series
@@ -79,19 +78,60 @@ class SeriesQueue(ThreadedQueue):
                         continue
 
                     # If we get to here, we want this series in the queue
-                    self.put(latest_series)
-            
+                    self.queue.put(latest_series)
+
             sleep(self.interval)
 
 
-class DicomQueue(ThreadedQueue):
-    """Expose a queue of DICOM files on the scanner."""
-    def __init__(self, scanner, series_q, interval=1):
+class DicomFinder(Finder):
+    """Manage a queue of DICOM files on the scanner.
+
+    This class talks to the scanner and to a separately-managed series queue.
+
+    """
+    def __init__(self, scanner, series_q, dicom_q, interval=1):
         """Initialize the queue."""
-        super(DicomQueue, self).__init__()
-        self.interval = interval
+        super(DicomFinder, self).__init__(interval)
+
+        # Referneces to the external objects we need to talk to
+        self.scanner = scanner
+        self.series_q = series_q
+        self.dicom_q = dicom_q
+
+        # A set to keep track of files we've added onto the queue
+        # (This is needed because we'll likely be running over the same
+        # series directory multiple times, so we need to know what's in
+        # the queue. We use a set because the relevant operations are
+        # quite a bit faster than they would be with lists.
+        self.dicom_files = set()
+
+        # TODO we'll need to find a way to flush the dicom_files set if
+        # we want to let the realtime code be persistent, otherwise it
+        # will get quite large. Perhaps we can just track dicom files for
+        # each series?
 
     def run(self):
 
         while self.alive:
+
+            if not self.series_q.empty():
+
+                # Grab the next series path off the queue
+                series_path = self.series_q.get()
+
+                # Find all the dicom files in this series
+                series_files = self.scanner.series_files(series_path)
+
+                # Compare against the set of files we've already placed
+                # in the queue, keep only the new ones
+                new_files = [f for f in series_files
+                             if f not in self.dicom_files]
+
+                # Place each new file onto the queue
+                for fname in new_files:
+                    self.dicom_q.put(fname)
+
+                # Update the set of files on the queue
+                self.dicom_files.update(set(new_files))
+
             sleep(self.interval)

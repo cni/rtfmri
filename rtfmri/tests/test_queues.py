@@ -1,5 +1,5 @@
 from __future__ import print_function
-from Queue import Empty
+from Queue import Queue, Empty
 
 from nose import SkipTest
 import nose.tools as nt
@@ -7,32 +7,20 @@ import nose.tools as nt
 from .. import client, queues
 
 
-class TestThreadedQueue(object):
+class TestFinder(object):
 
-    def test_queue_basics(self):
+    def test_control(self):
 
-        q = queues.ThreadedQueue()
+        f = queues.Finder(interval=2)
+        assert f.alive
 
-        # Can we put stuff into and take it back out of the queue?
-        q.put("hello")
-        q.put("world")
+        f.halt()
+        assert not f.alive
 
-        nt.assert_equal(q.get(), "hello")
-        nt.assert_equal(q.get(), "world")
-
-        with nt.assert_raises(Empty):
-            q.get(block=False)
-
-    def test_halt(self):
-
-        q = queues.ThreadedQueue()
-        assert q.alive
-
-        q.halt()
-        assert not q.alive
+        nt.assert_equal(f.interval, 2)
 
 
-class TestSeriesQueue(object):
+class TestFinders(object):
 
     @classmethod
     def setup_class(cls):
@@ -55,13 +43,14 @@ class TestSeriesQueue(object):
         if cls.client.ftp is not None:
             cls.client.close()
 
-    def test_queue(self):
+    def test_series_finder(self):
 
         if self.no_server:
             raise SkipTest
 
-        q = queues.SeriesQueue(self.client)
-        q.start()
+        q = Queue()
+        f = queues.SeriesFinder(self.client, q)
+        f.start()
 
         # We want to be able to stop the thead when tests fail
         try:
@@ -71,5 +60,28 @@ class TestSeriesQueue(object):
                 nt.assert_equal(want_series, got_series)
 
         finally:
-            q.halt()
-            q.join()
+            f.halt()
+            f.join()
+
+    def test_dicom_finder(self):
+
+        if self.no_server:
+            raise SkipTest
+
+        series_q = Queue()
+        series_q.put(self.client.latest_series)
+
+        dicom_q = Queue()
+        f = queues.SeriesFinder(self.client, series_q, dicom_q)
+        f.start()
+
+        # We want to be able to stop the thead when tests fail
+        try:
+
+            for want_fname in self.client.series_files():
+                got_fname = dicom_q.get(block=False)
+                nt.assert_equal(want_fname, got_fname)
+
+        finally:
+            f.halt()
+            f.join()
