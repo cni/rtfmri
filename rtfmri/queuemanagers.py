@@ -1,7 +1,10 @@
 """Thread-based objects that manage data as it arrives from the scanner."""
-from __future__ import print_function
+from __future__ import print_function, division
 from threading import Thread
+from Queue import Empty
 from time import sleep
+
+import numpy as np
 
 
 class Finder(Thread):
@@ -125,5 +128,64 @@ class DicomFinder(Finder):
                 # the next series, we don't need to track these any more
                 # and this keeps it from growing too large
                 self.dicom_files = set()
+
+            sleep(self.interval)
+
+
+class Volumizer(Finder):
+    """Reconstruct and manage a queue of complete MRI volumes.
+
+    This class talks to the Dicome queue, but does not need to talk to
+    the scanner.
+
+    """
+    def __init__(self, dicom_q, volume_q, interval=.1):
+        """Initialize the queue."""
+        super(DicomFinder, self).__init__(interval)
+
+        # The external queue objects we are talking to
+        self.dicom_q = dicom_q
+        self.volume_q = volume_q
+
+    def is_complete_volume(self, args):
+
+        pass
+
+    def generate_affine_matrix(self, dcm):
+        """Use DICOM metadata to generate an affine matrix."""
+        # The notes in the original code say this has to be done because
+        # dicom.get_affine() doesn't work. I think that's referring to
+        # nibabel.nicom.dicomwrappers.Wrapper, which comes with a warning
+        # that it only works for Siemens files. This method can probably be
+        # eliminated in the future when nibabel works with GE files.
+
+        # Begin with an identity matrix
+        affine = np.eye(4)
+
+        # Figure out the three dimensions of the voxels
+        if ("PixelSpacing" in dcm) and ("SpacingBetweenSlices" in dcm):
+            x, y = dcm.PixelSpacing
+            z = dcm.SpacingBetweenSlices
+            mm_per_vox = list(map(float, [x, y, z]))
+        else:
+            mm_per_vox = [0.] * 3
+        affine[:3, :3] = np.diag(mm_per_vox)
+
+        # Get the patient position
+        x, y, z = dcm.ImagePositionPatient
+        affine[:, :3] = -float(x), -float(y), float(z)
+
+        return affine
+
+    def run(self):
+
+        while self.alive:
+
+            try:
+                dcm = self.dicom_q.get(timeout=1)
+            except Empty:
+                pass
+            else:
+                pass
 
             sleep(self.interval)
