@@ -124,7 +124,13 @@ class ScannerClient(object):
             # Insert a tuple of (timestamp, size, name) for this entry
             contents.append((timestamp, int(size), name))
 
-        # Return this list sorted, which will be in timestamp order
+        # Return this list sorted, which will be in timestamp order.
+        # Because of how timestamps work, this is going to be somewhat
+        # incorrect. If we created File A on November 16, 2013 and today
+        # is November 15, 2014, a file created today is going to look "older"
+        # than File A. However I think this won't be a problem in practice,
+        # because the scanner doesn't keep files on it for that long.
+        # (But maybe it will be an issue right around New Years?)
         contents.sort()
         return contents
 
