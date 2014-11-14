@@ -5,6 +5,7 @@ This is the lowest layer of the rtfmri machinery.
 """
 from __future__ import print_function
 import os.path as op
+import re
 import ftplib
 import socket
 from cStringIO import StringIO
@@ -71,9 +72,33 @@ class ScannerClient(object):
         # Parse the output and return
         return self._parse_dir_output(file_list)
 
+    def _alphanumeric_sort(self, file_list):
+        """Sort the file list by name respecting numeric order.
+
+        DICOM filenames are numerically sequential, but not zero-padded.
+        The FTP server gives us a list of files in "sorted" order, but
+        that means the files are not in sequential order. Fix that here.
+
+        """
+        def alphanum_key(entry):
+            converted_parts = []
+            fname = entry.split()[-1]
+            parts = re.split("([0-9]+)", fname)
+            for part in parts:
+                if part.isdigit():
+                    converted_parts.append(int(part))
+                else:
+                    converted_parts.append(part)
+            return converted_parts
+
+        file_list.sort(key=alphanum_key)
+
     def _parse_dir_output(self, file_list):
         """Parse a UNIX-style ls output from the FTP server."""
-        # Go through each entry and parse out the useful bits
+        # Sort the file list, respecting alphanumeric order
+        self._alphanumeric_sort(file_list)
+
+        # Now go back through each entry and parse out the useful bits
         contents = []
         for i, entry in enumerate(file_list, 1):
             _, _, _, _, size, month, day, time, name = entry.split()
@@ -89,7 +114,8 @@ class ScannerClient(object):
             # so we are going to use the index in the list to mock a
             # microsecond timestamp. This assumes that we're getting the
             # directory contents in a meaningful sequential order.
-            # TODO verify that this is true somehow
+            # That should be true because of a) how the scanner names DICOMS
+            # and b) the sorting operation we performed above
             time_str = "{} {} {} {}:{:06d}".format(year, month, day, time, i)
 
             # Get a unique timestamp for this entry
@@ -143,8 +169,8 @@ class ScannerClient(object):
 
         # Get the list of entries in the exam dir
         series_contents = self.list_dir(series_dir)
-        series_dirs = [op.join(series_dir, n) for t, s, n in series_contents]
-        return series_dirs
+        series_files = [op.join(series_dir, n) for t, s, n in series_contents]
+        return series_files
 
     def series_info(self, series_dir=None):
         """Return a dicts with information about a series."""

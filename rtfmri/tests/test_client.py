@@ -54,13 +54,37 @@ class TestScannerClient(object):
         _, _, name = contents[0]
         nt.assert_equal(name, "p004")
 
+    def test_alphanum_sort(self):
+
+        test_list = ["1", "10", "2", "3", "4", "5", "6", "7", "8", "9"]
+        want_list = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+
+        self.client._alphanumeric_sort(test_list)
+        nt.assert_equal(test_list, want_list)
+
+        test_list = [
+            '-rw-rw-r-- 1 mwaskom  staff 27304 Nov 1 22:04 MR.1.2.840.10.dcm',
+            '-rw-rw-r-- 1 mwaskom  staff 27304 Nov 1 22:04 MR.1.2.840.100.dcm',
+            '-rw-rw-r-- 1 mwaskom  staff 27304 Nov 1 22:04 MR.1.2.840.11.dcm',
+        ]
+
+        want_list = [
+            '-rw-rw-r-- 1 mwaskom  staff 27304 Nov 1 22:04 MR.1.2.840.10.dcm',
+            '-rw-rw-r-- 1 mwaskom  staff 27304 Nov 1 22:04 MR.1.2.840.11.dcm',
+            '-rw-rw-r-- 1 mwaskom  staff 27304 Nov 1 22:04 MR.1.2.840.100.dcm',
+        ]
+
+        self.client._alphanumeric_sort(test_list)
+        nt.assert_equal(test_list, want_list)
+
     def test_parse_dir_output(self):
 
         test_list = [
             "drwx------   3 mwaskom  staff   102 May 26 12:39 Applications",
             "drwx------+  9 mwaskom  staff   306 Nov  7  2013 Desktop",
             "drwx------+  3 mwaskom  staff   109 May 24 17:20 Documents",
-            "drwx------+ 34 mwaskom  staff  1156 Oct 26 11:19 Downloads"]
+            "drwx------+ 34 mwaskom  staff  1156 Oct 26 11:19 Downloads"
+        ]
 
         parsed = self.client._parse_dir_output(test_list)
 

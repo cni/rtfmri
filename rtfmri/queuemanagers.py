@@ -133,7 +133,7 @@ class DicomFinder(Finder):
 
 
 class Volumizer(Finder):
-    """Reconstruct and manage a queue of complete MRI volumes.
+    """Reconstruct MRI volumes and manage a queue of them.
 
     This class talks to the Dicome queue, but does not need to talk to
     the scanner.
@@ -186,6 +186,17 @@ class Volumizer(Finder):
             except Empty:
                 pass
             else:
-                pass
+                try:
+                    # This is the dicom tag for "Number of locations"
+                    slices_per_volume = dcm[(0x0021, 0x104f)]
+                except KeyError:
+                    # TODO In theory, we shouldn't get to here, because the
+                    # series queue should only have timeseries images in it.
+                    # Need to figure out under what circumstances we'd get a
+                    # file that doesn't have a "number of locations" tag,
+                    # and what we should do with it when we do.
+                    # The next line is just taken from the original code.
+                    slices_per_volume = getattr(dcm, "ImagesInAcquisition")
+                slices_per_volume = int(slices_per_volume)
 
             sleep(self.interval)
