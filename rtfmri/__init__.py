@@ -1,2 +1,2 @@
 from client import ScannerClient
-from queuemanagers import SeriesFinder, DicomFinder
+from queuemanagers import SeriesFinder, DicomFinder, Volumizer

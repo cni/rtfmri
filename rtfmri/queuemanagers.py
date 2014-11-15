@@ -5,6 +5,7 @@ from Queue import Empty
 from time import sleep
 
 import numpy as np
+import nibabel as nib
 
 
 class Finder(Thread):
@@ -139,17 +140,13 @@ class Volumizer(Finder):
     the scanner.
 
     """
-    def __init__(self, dicom_q, volume_q, interval=.1):
+    def __init__(self, dicom_q, volume_q, interval=1):
         """Initialize the queue."""
-        super(DicomFinder, self).__init__(interval)
+        super(Volumizer, self).__init__(interval)
 
         # The external queue objects we are talking to
         self.dicom_q = dicom_q
         self.volume_q = volume_q
-
-    def is_complete_volume(self, args):
-
-        pass
 
     def generate_affine_matrix(self, dcm):
         """Use DICOM metadata to generate an affine matrix."""
@@ -173,22 +170,52 @@ class Volumizer(Finder):
 
         # Get the patient position
         x, y, z = dcm.ImagePositionPatient
-        affine[:, :3] = -float(x), -float(y), float(z)
+        affine[:3, 3] = -float(x), -float(y), float(z)
 
         return affine
 
+    def assemble_volume(self, slices):
+        """Turn a list of dicom slices into a nibabel volume and metadata."""
+        dcm = slices[0]
+
+        # Build the array of image data
+        x, y = dcm.pixel_array.shape
+        image_data = np.empty((x, y, len(slices)))
+        for z, slice in enumerate(slices):
+            image_data[..., z] = slice.pixel_array
+
+        # Turn it into a nibabel object
+        affine = self.generate_affine_matrix(dcm)
+        image_object = nib.Nifti1Image(image_data, affine)
+
+        # Build the volume dictionary we will put in the dicom queue
+        volume = dict(
+            exam=int(dcm.StudyID),
+            series=int(dcm.SeriesNumber),
+            acquisition=int(dcm.AcquisitionNumber),
+            patient_id=dcm.PatientID,
+            series_description=dcm.SeriesDescription,
+            tr=float(dcm.RepetitionTime) / 1000,
+            image=image_object
+            )
+
+        return volume
+
     def run(self):
+        """This function gets looped over repetedly while thread is alive."""
+        # Initialize the list we'll using to track progress
+        instance_numbers_needed = None
 
         while self.alive:
 
             try:
                 dcm = self.dicom_q.get(timeout=1)
             except Empty:
-                pass
+                sleep(self.interval)
             else:
                 try:
                     # This is the dicom tag for "Number of locations"
-                    slices_per_volume = dcm[(0x0021, 0x104f)]
+                    slices_per_volume = dcm[(0x0021, 0x104f)].value
                 except KeyError:
                     # TODO In theory, we shouldn't get to here, because the
                     # series queue should only have timeseries images in it.
@@ -199,4 +226,34 @@ class Volumizer(Finder):
                     slices_per_volume = getattr(dcm, "ImagesInAcquisition")
                 slices_per_volume = int(slices_per_volume)
 
-            sleep(self.interval)
+                # Get the DICOM instance for this volume
+                # This is an incremental index that reflects position in time
+                # and space (i.e. the index is the same for interleaved or
+                # not sequential acquisitisions) so we can trust it to put
+                # the volumes in the correct order.
+                current_slice = dcm.InstanceNumber
+
+                if instance_numbers_needed is None:
+                    # This is the first slice we've gotten from the volume
+                    # we are currently building, so figure out all of the
+                    # instance numbers we will need
+                    last_slice = current_slice + slices_per_volume
+                    instance_numbers_needed = list(range(current_slice,
+                                                         last_slice))
+                    instance_numbers_gathered = [current_slice]
+                    current_slices = [dcm]
+                else:
+                    # Add this slice index and dicom object to current list
+                    instance_numbers_gathered.append(current_slice)
+                    current_slices.append(dcm)
+
+                if instance_numbers_gathered == instance_numbers_needed:
+
+                    # Assemble all the slices together into a nibabel object
+                    volume = self.assemble_volume(current_slices)
+
+                    # Put that object on the dicom queue
+                    self.volume_q.put(volume)
+
+                    # Reset the list we're using to track progress
+                    instance_numbers_needed = None
