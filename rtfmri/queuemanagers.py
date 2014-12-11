@@ -39,10 +39,6 @@ class SeriesFinder(Finder):
         self.queue = queue
         self.alive = True
 
-    def halt(self):
-        """Make it so the thread will halt within a run method."""
-        self.alive = False
-
     def run(self):
         """This function gets looped over repetedly while thread is alive."""
         while self.alive:
