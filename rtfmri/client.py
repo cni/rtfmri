@@ -18,7 +18,8 @@ class ScannerClient(object):
     """Client to interface with GE scanner in real-time."""
     def __init__(self, hostname="cnimr", port=21,
                  username="", password="",
-                 base_dir="/export/home1/sdc_image_pool/images"):
+                 base_dir="/export/home1/sdc_image_pool/images",
+                 ftp_debug_level=0):
         """Inialize the client and connect to the FTP server.
 
         """
@@ -33,6 +34,7 @@ class ScannerClient(object):
         # an active FTP server
         try:
             self.connect()
+            self.ftp.set_debuglevel(ftp_debug_level)
         except socket.error:
             # Connection refused
             self.ftp = None

@@ -50,6 +50,8 @@ class TestFinders(object):
         if self.no_server:
             raise SkipTest
 
+        series_dirs = self.client.series_dirs()
+
         q = Queue()
         f = qm.SeriesFinder(self.client, q)
         f.start()
@@ -57,8 +59,8 @@ class TestFinders(object):
         # We want to be able to stop the thead when tests fail
         try:
 
-            for want_series in self.client.series_dirs():
-                got_series = q.get(block=False)
+            for want_series in series_dirs:
+                got_series = q.get(timeout=2)
                 nt.assert_equal(want_series, got_series)
 
         finally:
@@ -70,18 +72,20 @@ class TestFinders(object):
         if self.no_server:
             raise SkipTest
 
+        series_files = self.client.series_files()
+
         series_q = Queue()
         series_q.put(self.client.latest_series)
 
         dicom_q = Queue()
-        f = qm.SeriesFinder(self.client, series_q, dicom_q)
+        f = qm.DicomFinder(self.client, series_q, dicom_q)
         f.start()
 
         # We want to be able to stop the thead when tests fail
         try:
 
-            for want_fname in self.client.series_files():
-                got_fname = dicom_q.get(block=False)
+            for want_fname in series_files[:10]:
+                got_fname = dicom_q.get(timeout=2)
                 nt.assert_equal(want_fname, got_fname)
 
         finally:
@@ -138,7 +142,7 @@ class TestFinders(object):
     def test_volumizer(self):
 
         dicom_q = Queue()
-        series = "test_data/p004/e4120/4120_11_1_dicoms"
+        series = "test_data/p004/e4120/4120_4_1_dicoms"
         files = self.client.series_files(series)[:80]
         for f in files:
             dicom_q.put(self.client.retrieve_dicom(f))
@@ -154,7 +158,7 @@ class TestFinders(object):
 
             for vol in [vol1, vol2]:
                 image_shape = vol["image"].get_data().shape
-                nt.assert_equal(image_shape, (120, 120, 40))
+                nt.assert_equal(image_shape, (80, 80, 40))
 
             with nt.assert_raises(Empty):
                 volume_q.get(block=False)
