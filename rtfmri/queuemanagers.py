@@ -111,7 +111,7 @@ class DicomFinder(Finder):
 
                 # Place each new file onto the queue
                 for fname in new_files:
-                    self.dicom_q.put(fname)
+                    self.dicom_q.put(self.scanner.retrieve_dicom(fname))
 
                 # Update the set of files on the queue
                 self.dicom_files.update(set(new_files))

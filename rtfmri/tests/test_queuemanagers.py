@@ -1,4 +1,5 @@
 from __future__ import print_function
+import re
 from Queue import Queue, Empty
 
 from nose import SkipTest
@@ -72,10 +73,11 @@ class TestFinders(object):
         if self.no_server:
             raise SkipTest
 
-        series_files = self.client.series_files()
+        test_series = "test_data/p004/e4120/4120_1_1_dicoms"
+        series_files = self.client.series_files(test_series)
 
         series_q = Queue()
-        series_q.put(self.client.latest_series)
+        series_q.put(test_series)
 
         dicom_q = Queue()
         f = qm.DicomFinder(self.client, series_q, dicom_q)
@@ -84,9 +86,12 @@ class TestFinders(object):
         # We want to be able to stop the thead when tests fail
         try:
 
-            for want_fname in series_files[:10]:
-                got_fname = dicom_q.get(timeout=2)
-                nt.assert_equal(want_fname, got_fname)
+            for want_fname in series_files[:2]:
+                m = re.search("MR\.([\d\.]+)\.dcm", want_fname)
+                want_instance = m.group(1)
+                got_dcm = dicom_q.get(timeout=2)
+                got_instance = got_dcm[(0x0008, 0x0018)].value
+                nt.assert_equal(want_instance, got_instance)
 
         finally:
             f.halt()
