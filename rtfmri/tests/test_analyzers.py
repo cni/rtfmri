@@ -15,7 +15,7 @@ class TestMotionAnalyzer(object):
 
     def test_rms(self):
 
-        a = anal.MotionAnalyzer(None)
+        a = anal.MotionAnalyzer(None, None)
 
         T = np.eye(4)
         nt.assert_equal(a.compute_rms(Rigid(T)), 0)
@@ -37,3 +37,13 @@ class TestMotionAnalyzer(object):
         rms2 = a.compute_rms(Rigid(T2))
 
         npt.assert_almost_equal(rms1 * 2, rms2, 1)
+
+    def test_new_run_detection(self):
+
+        a = anal.MotionAnalyzer(None, None)
+        a.ref_vol = dict(exam=1, series=2, acquisition=6)
+
+        assert not a.new_scanner_run(dict(exam=1, series=2, acquisition=6))
+        assert a.new_scanner_run(dict(exam=2, series=2, acquisition=6))
+        assert a.new_scanner_run(dict(exam=1, series=3, acquisition=6))
+        assert a.new_scanner_run(dict(exam=1, series=2, acquisition=7))

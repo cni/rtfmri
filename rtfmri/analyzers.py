@@ -1,13 +1,11 @@
 """Thread-based objects that analyze data as it arrives in the queues."""
 from __future__ import print_function, division
-from threading import Thread
 from Queue import Empty
 from time import sleep
 
 import numpy as np
-import nibabel as nib
 
-from nipy.algorithms.registration import Image4d, single_run_realign4d
+from nipy.algorithms.registration import HistogramRegistration
 
 from .queuemanagers import Finder
 
@@ -27,9 +25,11 @@ class MotionAnalyzer(Finder):
     # For the time-being I'm not putting a ton of thought into that design
     # though, just because I'm not really sure exactly how you would want
     # it to look like.
-    def __init__(self, volume_q, skip_vols=4):
+    def __init__(self, scanner, result_q, skip_vols=4, interval=1):
         """Initialize the queue."""
-        self.volume_q = volume_q
+        super(MotionAnalyzer, self).__init__(interval)
+        self.scanner = scanner
+        self.result_q = result_q
         self.skip_vols = skip_vols
 
         # The reference volume (first of each acquisition)
@@ -38,15 +38,15 @@ class MotionAnalyzer(Finder):
         # The previous volume (for scan-to-scan motion)
         self.pre_vol = None
 
-    def compute_registration(self, fixed, moving):
+    def compute_registration(self, moving, fixed):
         """Estimate a linear, within-modality transform from moving to fixed.
 
         Parameters
         ----------
-        fixed : nibabel image object
-            Reference image.
         moving : nibabel image object
             Image to be registered to the reference image.
+        fixed : nibabel image object
+            Reference image.
 
         Returns
         -------
@@ -54,29 +54,8 @@ class MotionAnalyzer(Finder):
             Rigid matrix giving transform from moving to fixed.
 
         """
-        fixed_data = fixed.get_data()
-        moving_data = moving.get_data()
-        assert fixed_data.shape == moving_data.shape
-
-        # Add a forth dimension and concatenate into one "timeseries"
-        data = np.concatenate([fixed_data[..., np.newaxis],
-                               moving_data[..., np.newaxis]], axis=3)
-
-        # Create a nipy Image4d object
-        # (apparently the nipy registration stuff needs this, although
-        # it's been suggested that Image4d is thought of as an "internal"
-        # object on the mailing list).
-        img = Image4d(data, fixed.get_affine(), tr=1, slice_times=0)
-
-        # Estimate the registration from moving to fixed
-        # Currently this is using nipy's 4d realignment, which also
-        # can do simultaneous slice-time correction (although that is
-        # turned off here. It's not clear to me what the best way to
-        # get a fast, reasonable image-to-image registration in nipy is,
-        # but this is probably not it. Unfortunately, nipy's complex
-        # organization and general lack of documentation makes this
-        # difficult.
-        _, T = single_run_realign4d(img, time_interp=False, loops=1)
+        reg = HistogramRegistration(moving, fixed, interp="tri")
+        T = reg.optimize("rigid")
         return T
 
     def compute_rms(self, T):
@@ -110,18 +89,58 @@ class MotionAnalyzer(Finder):
 
         return rms
 
+    def new_scanner_run(self, vol):
+        """Compare vol to ref to see if there has been a new scanner run."""
+        if self.ref_vol is None:
+            return True
+
+        for item in ["exam", "series", "acquisition"]:
+            if vol[item] != self.ref_vol[item]:
+                return True
+        return False
+
     def run(self):
         """This function gets looped over repetedly while thread is alive."""
         while self.alive:
-            pass
+            try:
+                vol = self.scanner.get_volume(timeout=1)
+            except Empty:
+                sleep(self.interval)
+                continue
+
             # Check if we need to update the reference image
+            if self.new_scanner_run(vol):
+                self.ref_vol = vol
+                self.pre_vol = vol
+
+                # Put a dictionary of null results in the queue
+                result = dict(rot_x=0, rot_y=0, rot_z=0,
+                              trans_x=0, trans_y=0, trans_z=0,
+                              rms_ref=0, rms_pre=0)
+                vol.update(result)
+                self.result_q.put(vol)
+                continue
 
             # Compute the transformation to the reference image
+            T_ref = self.compute_registration(vol, self.ref_vol)
 
             # Compute the transformation to the previous image
+            # TODO Look out for memory leaks - it's possible that
+            # we will need to actively free up the old pre vol
+            T_pre = self.compute_registration(vol, self.pre_vol)
 
             # Update the previous image with the current image
+            self.pre_vol = vol
 
             # Compute the summary information for both transformations
+            rms_ref = self.compute_rms(T_ref)
+            rms_pre = self.compute_rms(T_pre)
 
-            # Push the summary information to the frontend application
+            # Put the summary information into the result queue
+            rot_x, rot_y, rot_z = T_ref.rotation
+            trans_x, trans_y, trans_z = T_ref.translation
+            result = dict(rot_x=rot_x, rot_y=rot_y, rot_z=rot_z,
+                          trans_x=trans_x, trans_y=trans_y, trans_z=trans_z,
+                          rms_ref=rms_ref, rms_pre=rms_pre)
+            vol.update(result)
+            self.result_q.put(vol)
