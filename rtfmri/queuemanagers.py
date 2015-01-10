@@ -192,6 +192,7 @@ class Volumizer(Finder):
             patient_id=dcm.PatientID,
             series_description=dcm.SeriesDescription,
             tr=float(dcm.RepetitionTime) / 1000,
+            ntp=float(dcm.NumberofTemporalPositions),
             image=image_object
             )
 
@@ -208,48 +209,49 @@ class Volumizer(Finder):
                 dcm = self.dicom_q.get(timeout=1)
             except Empty:
                 sleep(self.interval)
+                continue
+
+            try:
+                # This is the dicom tag for "Number of locations"
+                slices_per_volume = dcm[(0x0021, 0x104f)].value
+            except KeyError:
+                # TODO In theory, we shouldn't get to here, because the
+                # series queue should only have timeseries images in it.
+                # Need to figure out under what circumstances we'd get a
+                # file that doesn't have a "number of locations" tag,
+                # and what we should do with it when we do.
+                # The next line is just taken from the original code.
+                slices_per_volume = getattr(dcm, "ImagesInAcquisition")
+            slices_per_volume = int(slices_per_volume)
+
+            # Get the DICOM instance for this volume
+            # This is an incremental index that reflects position in time
+            # and space (i.e. the index is the same for interleaved or
+            # not sequential acquisitisions) so we can trust it to put
+            # the volumes in the correct order.
+            current_slice = dcm.InstanceNumber
+
+            if instance_numbers_needed is None:
+                # This is the first slice we've gotten from the volume
+                # we are currently building, so figure out all of the
+                # instance numbers we will need
+                last_slice = current_slice + slices_per_volume
+                instance_numbers_needed = list(range(current_slice,
+                                                     last_slice))
+                instance_numbers_gathered = [current_slice]
+                current_slices = [dcm]
             else:
-                try:
-                    # This is the dicom tag for "Number of locations"
-                    slices_per_volume = dcm[(0x0021, 0x104f)].value
-                except KeyError:
-                    # TODO In theory, we shouldn't get to here, because the
-                    # series queue should only have timeseries images in it.
-                    # Need to figure out under what circumstances we'd get a
-                    # file that doesn't have a "number of locations" tag,
-                    # and what we should do with it when we do.
-                    # The next line is just taken from the original code.
-                    slices_per_volume = getattr(dcm, "ImagesInAcquisition")
-                slices_per_volume = int(slices_per_volume)
+                # Add this slice index and dicom object to current list
+                instance_numbers_gathered.append(current_slice)
+                current_slices.append(dcm)
 
-                # Get the DICOM instance for this volume
-                # This is an incremental index that reflects position in time
-                # and space (i.e. the index is the same for interleaved or
-                # not sequential acquisitisions) so we can trust it to put
-                # the volumes in the correct order.
-                current_slice = dcm.InstanceNumber
+            if instance_numbers_gathered == instance_numbers_needed:
 
-                if instance_numbers_needed is None:
-                    # This is the first slice we've gotten from the volume
-                    # we are currently building, so figure out all of the
-                    # instance numbers we will need
-                    last_slice = current_slice + slices_per_volume
-                    instance_numbers_needed = list(range(current_slice,
-                                                         last_slice))
-                    instance_numbers_gathered = [current_slice]
-                    current_slices = [dcm]
-                else:
-                    # Add this slice index and dicom object to current list
-                    instance_numbers_gathered.append(current_slice)
-                    current_slices.append(dcm)
+                # Assemble all the slices together into a nibabel object
+                volume = self.assemble_volume(current_slices)
 
-                if instance_numbers_gathered == instance_numbers_needed:
+                # Put that object on the dicom queue
+                self.volume_q.put(volume)
 
-                    # Assemble all the slices together into a nibabel object
-                    volume = self.assemble_volume(current_slices)
-
-                    # Put that object on the dicom queue
-                    self.volume_q.put(volume)
-
-                    # Reset the list we're using to track progress
-                    instance_numbers_needed = None
+                # Reset the list we're using to track progress
+                instance_numbers_needed = None

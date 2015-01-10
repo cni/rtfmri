@@ -3,6 +3,7 @@ from Queue import Queue
 from .client import ScannerClient
 from .queuemanagers import SeriesFinder, DicomFinder, Volumizer
 
+
 class ScannerInterface(object):
     """Interface for getting real-time data off the scanner.
 
