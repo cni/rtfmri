@@ -42,6 +42,10 @@ class ScannerInterface(object):
         self.dicom_finder.start()
         self.volumizer.start()
 
+    def get_volume(self, *args, **kwargs):
+        """Semantic wrapper for pulling a volume off the volume queue."""
+        self.volumizer.volume_q.get(*args, **kwargs)
+
     def shutdown(self):
         """Halt and join the threads so we can exit cleanly."""
         self.series_finder.halt()
