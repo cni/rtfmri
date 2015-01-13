@@ -129,6 +129,9 @@ class TestFinders(object):
 
     def test_volumizer_volume_assembly(self):
 
+        if self.no_server:
+            raise SkipTest
+
         series = "test_data/p004/e4120/4120_11_1_dicoms"
         files = self.client.series_files(series)[:40]
         slices = [self.client.retrieve_dicom(f) for f in files]
@@ -145,6 +148,9 @@ class TestFinders(object):
         nt.assert_equal(volume["acquisition"], 1)
 
     def test_volumizer(self):
+
+        if self.no_server:
+            raise SkipTest
 
         dicom_q = Queue()
         series = "test_data/p004/e4120/4120_4_1_dicoms"

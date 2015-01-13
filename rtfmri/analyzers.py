@@ -123,6 +123,8 @@ class MotionAnalyzer(Finder):
                 # Still too early in the scan, just increment and bail out
                 vol_number += 1
                 continue
+
+            # Check if we need to reset the reference image
             elif vol_number == self.skip_vols:
                 # Update the reference volume to start here
                 self.ref_vol = vol
@@ -170,6 +172,7 @@ class MotionAnalyzer(Finder):
 
 @contextlib.contextmanager
 def silent():
+    """Context manager to squelch stdout."""
     save_stdout = sys.stdout
     sys.stdout = StringIO()
     yield

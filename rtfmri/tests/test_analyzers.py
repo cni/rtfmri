@@ -1,5 +1,7 @@
 from __future__ import print_function
 
+from Queue import Queue, Empty
+import numpy as np
 import nibabel as nib
 
 import nose.tools as nt
@@ -9,10 +11,20 @@ from nipy.algorithms.registration import Rigid
 
 from .. import analyzers as anal
 
-import numpy as np
-
 
 class TestMotionAnalyzer(object):
+
+    x, y, = np.meshgrid(np.linspace(-100, 100, 100),
+                        np.linspace(-100, 100, 100))
+
+    e = (x ** 2 / 40 ** 2 + y ** 2 / 50 ** 2 < 1).astype(np.float)
+    e *= np.sin(x / 4)
+    e1 = np.zeros((100, 100, 10))
+    e1[..., 5] = e
+    e2 = np.roll(e1, 5, axis=1)
+
+    eim1 = nib.Nifti1Image(e1, np.eye(4))
+    eim2 = nib.Nifti1Image(e2, np.eye(4))
 
     def test_rms(self):
 
@@ -51,18 +63,81 @@ class TestMotionAnalyzer(object):
 
     def test_compute_registration(self):
 
-        x, y, = np.meshgrid(np.linspace(-100, 100, 100),
-                            np.linspace(-100, 100, 100))
-
-        e = (x ** 2 / 40 ** 2 + y ** 2 / 50 ** 2 < 1).astype(np.float)
-        e *= np.sin(x / 4)
-        e1 = np.zeros((100, 100, 10))
-        e1[..., 5] = e
-        e2 = np.roll(e1, 5, axis=1)
-
-        eim1 = nib.Nifti1Image(e1, np.eye(4))
-        eim2 = nib.Nifti1Image(e2, np.eye(4))
-
         a = anal.MotionAnalyzer(None, None)
-        T = a.compute_registration(eim1, eim2)
+        T = a.compute_registration(self.eim1, self.eim2)
         npt.assert_array_almost_equal(T.translation, [0, 5, 0], 1)
+
+    def test_run_method(self):
+
+        volume_q = Queue()
+
+        class ScannerInterface(object):
+            """Mock the ScannerInterface with just the queue we need."""
+            def __init__(self, q):
+
+                self.q = q
+
+            def get_volume(self, *args, **kwargs):
+
+                return self.q.get(*args, **kwargs)
+
+        scanner = ScannerInterface(volume_q)
+        result_q = Queue()
+
+        a = anal.MotionAnalyzer(scanner, result_q, skip_vols=0)
+
+        vol1 = dict(exam=1, series=1, acquisition=1, image=self.eim1)
+        volume_q.put(vol1)
+
+        vol2 = dict(exam=1, series=1, acquisition=1, image=self.eim2)
+        volume_q.put(vol2)
+
+        try:
+            a.start()
+
+            result = result_q.get(timeout=5)
+            assert result
+            for axis in ["x", "y", "z"]:
+                nt.assert_equal(result["rot_" + axis], 0)
+                nt.assert_equal(result["trans_" + axis], 0)
+            nt.assert_equal(result["rms_ref"], 0)
+            nt.assert_equal(result["rms_pre"], 0)
+            nt.assert_equal(result["vol_number"], 0)
+
+            result = result_q.get(timeout=5)
+            for axis in ["x", "y", "z"]:
+                npt.assert_almost_equal(result["rot_" + axis], 0, 1)
+                if axis == "y":
+                    npt.assert_almost_equal(result["trans_" + axis], -5, 1)
+                else:
+                    npt.assert_almost_equal(result["trans_" + axis], 0, 1)
+            npt.assert_almost_equal(result["rms_ref"], 5, 1)
+            npt.assert_almost_equal(result["rms_pre"], 5, 1)
+            nt.assert_equal(result["vol_number"], 1)
+
+        finally:
+
+            a.halt()
+            a.join()
+
+        a = anal.MotionAnalyzer(scanner, result_q, skip_vols=1)
+        volume_q.put(vol1)
+        volume_q.put(vol1)
+        volume_q.put(vol1)
+
+        try:
+            a.start()
+
+            result = result_q.get(timeout=5)
+            nt.assert_equal(result["vol_number"], 1)
+
+            result = result_q.get(timeout=5)
+            nt.assert_equal(result["vol_number"], 2)
+
+            with nt.assert_raises(Empty):
+                result = result_q.get(timeout=1)
+
+        finally:
+
+            a.halt()
+            a.join()

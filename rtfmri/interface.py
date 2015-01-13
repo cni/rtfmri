@@ -29,6 +29,9 @@ class ScannerInterface(object):
         client1 = ScannerClient(*args, **kwargs)
         client2 = ScannerClient(*args, **kwargs)
 
+        # Set an attribute so we know if we could connect
+        self.has_ftp_connection = client1.ftp is not None
+
         # Initialize the queue objects
         series_q = Queue()
         dicom_q = Queue()
@@ -66,6 +69,7 @@ class ScannerInterface(object):
 
 def setup_exit_handler(scanner, analyzer):
     """Method that will let us ctrl-c the object and kill threads."""
+    # TODO this currently does not work?
     def exit(signum, stack):
         scanner.shutdown()
         analyzer.halt()
