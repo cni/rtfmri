@@ -1,5 +1,8 @@
 """Thread-based objects that analyze data as it arrives in the queues."""
 from __future__ import print_function, division
+import sys
+import contextlib
+from cStringIO import StringIO
 from Queue import Empty
 from time import sleep
 
@@ -55,7 +58,8 @@ class MotionAnalyzer(Finder):
 
         """
         reg = HistogramRegistration(moving, fixed, interp="tri")
-        T = reg.optimize("rigid")
+        with silent():  # Mute stdout due to verbose optimization info
+            T = reg.optimize("rigid")
         return T
 
     def compute_rms(self, T):
@@ -101,6 +105,7 @@ class MotionAnalyzer(Finder):
 
     def run(self):
         """This function gets looped over repetedly while thread is alive."""
+        vol_number = 0
         while self.alive:
             try:
                 vol = self.scanner.get_volume(timeout=1)
@@ -108,28 +113,43 @@ class MotionAnalyzer(Finder):
                 sleep(self.interval)
                 continue
 
-            # Check if we need to update the reference image
+            # Check if we need to reset the volume counter
             if self.new_scanner_run(vol):
+                self.ref_vol = vol
+                vol_number = 0
+
+            # Check if we are outside of the stabilization scans
+            if vol_number < self.skip_vols:
+                # Still too early in the scan, just increment and bail out
+                vol_number += 1
+                continue
+            elif vol_number == self.skip_vols:
+                # Update the reference volume to start here
                 self.ref_vol = vol
                 self.pre_vol = vol
 
                 # Put a dictionary of null results in the queue
                 result = dict(rot_x=0, rot_y=0, rot_z=0,
                               trans_x=0, trans_y=0, trans_z=0,
-                              rms_ref=0, rms_pre=0)
+                              rms_ref=0, rms_pre=0, vol_number=vol_number)
                 vol.update(result)
                 self.result_q.put(vol)
+
+                # Increment the volume counter and bail out
+                vol_number += 1
                 continue
 
             # Compute the transformation to the reference image
-            T_ref = self.compute_registration(vol, self.ref_vol)
+            T_ref = self.compute_registration(vol["image"],
+                                              self.ref_vol["image"])
 
             # Compute the transformation to the previous image
-            # TODO Look out for memory leaks - it's possible that
-            # we will need to actively free up the old pre vol
-            T_pre = self.compute_registration(vol, self.pre_vol)
+            T_pre = self.compute_registration(vol["image"],
+                                              self.pre_vol["image"])
 
             # Update the previous image with the current image
+            # TODO Look out for memory leaks - it's possible that
+            # we will need to actively free up the old pre vol
             self.pre_vol = vol
 
             # Compute the summary information for both transformations
@@ -141,6 +161,16 @@ class MotionAnalyzer(Finder):
             trans_x, trans_y, trans_z = T_ref.translation
             result = dict(rot_x=rot_x, rot_y=rot_y, rot_z=rot_z,
                           trans_x=trans_x, trans_y=trans_y, trans_z=trans_z,
-                          rms_ref=rms_ref, rms_pre=rms_pre)
+                          rms_ref=rms_ref, rms_pre=rms_pre,
+                          vol_number=vol_number)
             vol.update(result)
             self.result_q.put(vol)
+            vol_number += 1
+
+
+@contextlib.contextmanager
+def silent():
+    save_stdout = sys.stdout
+    sys.stdout = StringIO()
+    yield
+    sys.stdout = save_stdout

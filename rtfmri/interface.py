@@ -1,4 +1,6 @@
 """High-level interface to manage moving parts of realtime code."""
+import sys
+import signal
 from Queue import Queue
 from .client import ScannerClient
 from .queuemanagers import SeriesFinder, DicomFinder, Volumizer
@@ -37,14 +39,15 @@ class ScannerInterface(object):
         self.dicom_finder = DicomFinder(client2, series_q, dicom_q)
         self.volumizer = Volumizer(dicom_q, volume_q)
 
-        # Get the threads running
+    def start(self):
+        """Start the constituent threads."""
         self.series_finder.start()
         self.dicom_finder.start()
         self.volumizer.start()
 
     def get_volume(self, *args, **kwargs):
         """Semantic wrapper for pulling a volume off the volume queue."""
-        self.volumizer.volume_q.get(*args, **kwargs)
+        return self.volumizer.volume_q.get(*args, **kwargs)
 
     def shutdown(self):
         """Halt and join the threads so we can exit cleanly."""
@@ -59,3 +62,15 @@ class ScannerInterface(object):
     def __del__(self):
 
         self.shutdown()
+
+
+def setup_exit_handler(scanner, analyzer):
+    """Method that will let us ctrl-c the object and kill threads."""
+    def exit(signum, stack):
+        scanner.shutdown()
+        analyzer.halt()
+        analyzer.join()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, exit)
+    signal.signal(signal.SIGTERM, exit)
