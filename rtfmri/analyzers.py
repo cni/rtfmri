@@ -62,15 +62,19 @@ class MotionAnalyzer(Finder):
             T = reg.optimize("rigid")
         return T
 
-    def compute_rms(self, T):
-        """Compute root mean squared displacement of a transform matrix.
+    def compute_rms(self, T1, T2, center=None, R=80):
+        """Compute root mean squared displacement between two transform matrices.
 
         Parameters
         ----------
-        T : nipy Rigid object
-            Transformation matrix.
+        T1, T2 : nipy Rigid object
+            Transformation matrices.
         rms : scalar
             Root-mean-squared displacement corresponding to the transformation.
+        center : vector of size 3
+            Coordinate for the center of the head.
+        R : float
+            Radius of the idealized (sphere) head, in mm.
 
         Notes
         -----
@@ -79,14 +83,16 @@ class MotionAnalyzer(Finder):
         http://www.fmrib.ox.ac.uk/analysis/techrep/tr99mj1/tr99mj1/node3.html
 
         """
-        T = T.as_affine() - np.eye(4)
+        isodiff = T1.as_affine().dot(np.linalg.inv(T2.as_affine())) - np.eye(4)
 
         # Decompose the transformation
-        A = T[:3, :3]
-        t = T[:3, 3]
+        A = isodiff[:3, :3]
+        t = isodiff[:3, 3]
 
-        # This is radius for our idealized head, which is a sphere
-        R = 80
+        # Center the transformation component
+        if center is None:
+            center = np.zeros(3)
+        t += A.dot(center)
 
         # Compute the RMS displacemant
         rms = np.sqrt(R ** 2 / 5 * A.T.dot(A).trace() + t.T.dot(t))

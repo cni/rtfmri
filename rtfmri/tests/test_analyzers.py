@@ -30,24 +30,24 @@ class TestMotionAnalyzer(object):
 
         a = anal.MotionAnalyzer(None, None)
 
-        T = np.eye(4)
-        nt.assert_equal(a.compute_rms(Rigid(T)), 0)
+        T1, T2 = np.eye(4), np.eye(4)
+        nt.assert_equal(a.compute_rms(Rigid(T1), Rigid(T2)), 0)
 
-        T[0, 3] = 1
-        nt.assert_equal(a.compute_rms(Rigid(T)), 1)
+        T2[0, 3] = 1
+        nt.assert_equal(a.compute_rms(Rigid(T1), Rigid(T2)), 1)
 
-        T[1, 3] = 1
-        nt.assert_equal(a.compute_rms(Rigid(T)), np.sqrt(2))
+        T2[1, 3] = 1
+        nt.assert_equal(a.compute_rms(Rigid(T1), Rigid(T2)), np.sqrt(2))
 
         T1 = np.eye(4)
         T1[1:3, 1:3] = [(np.cos(.1), -np.sin(.1)),
                         (np.sin(.1), np.cos(.1))]
-        rms1 = a.compute_rms(Rigid(T1))
+        rms1 = a.compute_rms(Rigid(np.eye(4)), Rigid(T1))
 
         T2 = np.eye(4)
         T2[1:3, 1:3] = [(np.cos(.2), -np.sin(.2)),
                         (np.sin(.2), np.cos(.2))]
-        rms2 = a.compute_rms(Rigid(T2))
+        rms2 = a.compute_rms(Rigid(np.eye(4)), Rigid(T2))
 
         npt.assert_almost_equal(rms1 * 2, rms2, 1)
 
