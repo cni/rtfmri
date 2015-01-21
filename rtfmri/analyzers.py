@@ -8,7 +8,7 @@ from time import sleep
 
 import numpy as np
 
-from nipy.algorithms.registration import HistogramRegistration
+from nipy.algorithms.registration import HistogramRegistration, Rigid
 
 from .queuemanagers import Finder
 
@@ -38,10 +38,11 @@ class MotionAnalyzer(Finder):
         # The reference volume (first of each acquisition)
         self.ref_vol = None
 
-        # The previous volume (for scan-to-scan motion)
-        self.pre_vol = None
+        # The previous registration matrix
+        # (used for computing the relative deviation)
+        self.pre_T = None
 
-    def compute_registration(self, moving, fixed):
+    def compute_registration(self, moving, fixed, init=None, interp="tri"):
         """Estimate a linear, within-modality transform from moving to fixed.
 
         Parameters
@@ -50,6 +51,10 @@ class MotionAnalyzer(Finder):
             Image to be registered to the reference image.
         fixed : nibabel image object
             Reference image.
+        init : transformation object or None
+            Initialization for the transformation. If ``None``, the
+            registration is seeded with a small rotation, which helps avoid
+            getting stuck in the local minimum of no motion.
 
         Returns
         -------
@@ -57,9 +62,12 @@ class MotionAnalyzer(Finder):
             Rigid matrix giving transform from moving to fixed.
 
         """
-        reg = HistogramRegistration(moving, fixed, interp="tri")
+        if init is None:
+            # This applies a small rotation; code from Alexis Roche
+            init = Rigid((0, 0, 0, 0.01, 0.01, 0.01, 0, 0, 0, 0, 0, 0))
+        reg = HistogramRegistration(moving, fixed, interp=interp)
         with silent():  # Mute stdout due to verbose optimization info
-            T = reg.optimize("rigid")
+            T = reg.optimize(init)
         return T
 
     def compute_rms(self, T1, T2, center=None, R=80):
@@ -89,7 +97,7 @@ class MotionAnalyzer(Finder):
         A = isodiff[:3, :3]
         t = isodiff[:3, 3]
 
-        # Center the transformation component
+        # Center the translation component
         if center is None:
             center = np.zeros(3)
         t += A.dot(center)
@@ -99,10 +107,19 @@ class MotionAnalyzer(Finder):
 
         return rms
 
+    def volume_center(self, img):
+        """Find the coordinates of the center of a nibabel image."""
+        center = .5 * (np.array(img.shape[:3]) - 1)
+        center *= img.header.get_zooms()[:3]
+        return center
+
     def new_scanner_run(self, vol):
         """Compare vol to ref to see if there has been a new scanner run."""
         if self.ref_vol is None:
             return True
+
+        if not self.ref_vol:
+            return False
 
         for item in ["exam", "series", "acquisition"]:
             if vol[item] != self.ref_vol[item]:
@@ -121,7 +138,7 @@ class MotionAnalyzer(Finder):
 
             # Check if we need to reset the volume counter
             if self.new_scanner_run(vol):
-                self.ref_vol = vol
+                self.ref_vol = {}
                 vol_number = 0
 
             # Check if we are outside of the stabilization scans
@@ -134,7 +151,9 @@ class MotionAnalyzer(Finder):
             elif vol_number == self.skip_vols:
                 # Update the reference volume to start here
                 self.ref_vol = vol
-                self.pre_vol = vol
+
+                # Set the previous affine matrix to identity
+                self.pre_T = Rigid(np.eye(4))
 
                 # Put a dictionary of null results in the queue
                 result = dict(rot_x=0, rot_y=0, rot_z=0,
@@ -148,31 +167,31 @@ class MotionAnalyzer(Finder):
                 continue
 
             # Compute the transformation to the reference image
-            T_ref = self.compute_registration(vol["image"],
-                                              self.ref_vol["image"])
+            T = self.compute_registration(vol["image"],
+                                          self.ref_vol["image"],
+                                          init=self.pre_T.copy(),
+                                          interp="tri")
 
-            # Compute the transformation to the previous image
-            T_pre = self.compute_registration(vol["image"],
-                                              self.pre_vol["image"])
+            # Compute the RMS displacement to the reference volume
+            rms_ref = self.compute_rms(Rigid(np.eye(4)), T)
 
-            # Update the previous image with the current image
-            # TODO Look out for memory leaks - it's possible that
-            # we will need to actively free up the old pre vol
-            self.pre_vol = vol
-
-            # Compute the summary information for both transformations
-            rms_ref = self.compute_rms(T_ref)
-            rms_pre = self.compute_rms(T_pre)
+            # Compute the RMS displacement from the previous volume
+            rms_pre = self.compute_rms(self.pre_T, T)
 
             # Put the summary information into the result queue
-            rot_x, rot_y, rot_z = T_ref.rotation
-            trans_x, trans_y, trans_z = T_ref.translation
+            rot_x, rot_y, rot_z = T.rotation
+            trans_x, trans_y, trans_z = T.translation
             result = dict(rot_x=rot_x, rot_y=rot_y, rot_z=rot_z,
                           trans_x=trans_x, trans_y=trans_y, trans_z=trans_z,
                           rms_ref=rms_ref, rms_pre=rms_pre,
                           vol_number=vol_number)
             vol.update(result)
             self.result_q.put(vol)
+
+            # Update the previous transformation matrix
+            self.pre_T = T
+
+            # Update the volume counter
             vol_number += 1
 
 
