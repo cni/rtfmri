@@ -158,7 +158,8 @@ class MotionAnalyzer(Finder):
                 # Put a dictionary of null results in the queue
                 result = dict(rot_x=0, rot_y=0, rot_z=0,
                               trans_x=0, trans_y=0, trans_z=0,
-                              rms_ref=0, rms_pre=0, vol_number=vol_number)
+                              rms_ref=0, rms_pre=0, vol_number=vol_number,
+                              new_acquisition=True)
                 vol.update(result)
                 self.result_q.put(vol)
 
@@ -178,13 +179,15 @@ class MotionAnalyzer(Finder):
             # Compute the RMS displacement from the previous volume
             rms_pre = self.compute_rms(self.pre_T, T)
 
-            # Put the summary information into the result queue
-            rot_x, rot_y, rot_z = T.rotation
+            # Get the realignment parameters
+            rot_x, rot_y, rot_z = np.rad2deg(T.rotation)
             trans_x, trans_y, trans_z = T.translation
+
+            # Put the summary information into the result queue
             result = dict(rot_x=rot_x, rot_y=rot_y, rot_z=rot_z,
                           trans_x=trans_x, trans_y=trans_y, trans_z=trans_z,
                           rms_ref=rms_ref, rms_pre=rms_pre,
-                          vol_number=vol_number)
+                          vol_number=vol_number, new_acquisition=False)
             vol.update(result)
             self.result_q.put(vol)
 
