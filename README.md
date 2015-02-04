@@ -53,6 +53,20 @@ rtmotion.halt()
 rtmotion.join()
 ```
 
+Most users will be interested in the web-app bassed interface for viewing the real-time motion results. Currently, that can be activated by running the following commands in a terminal:
+
+```
+bokeh-server &
+python interface_prototype.py
+```
+
+The current implementation of this app is highly experimental and will change. Currently it just shows the results from the current run and will refresh the plots when a new run starts on the scanner.
+
+Testing
+-------
+
+Testing is accomplished using `nose`. Most of the code needs the mock scanner ftp server running (see `rt_ftp_test_server.py`), but the test suite should be able to pass without a live server. Call `nosetests` from the root source directory to exercise the test suite.
+
 Dependencies
 ------------
 
@@ -69,6 +83,7 @@ Real-time motion analyzer:
 
 Motion analyzer web-app:
 
+- seaborn
 - bokeh 0.7+
 
 License
