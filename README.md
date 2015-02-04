@@ -1,26 +1,82 @@
-rtfmri
-======
-Real-time fMRI for a GE MRI system.
+Stanford CNI Real-time fMRI
+===========================
+
+Real-time interface for a GE MRI system.
 
 Project Goal
 ------------
 Our goal is to process functional MRI data in near real-time, as the brain measurements are made. There are several potential applications for such a system, including neuro-feedback experiments, and well as real-time monitoring of data quality for any study.
 
-The system tries to pull dicoms from the scanner as fast as possible, ideally just as they arrive from the recon engine. So, it bypasses the dicom server and accesses the dicom filestore directly, finding the latest folder (which corresponds to the currently running scan) and pulling any new images from that folder. A separate thread assembles the images into a volume as they arrive. Each time a complete volume is made, it is handed off to yet another thread for processing.
-
 History
 -------
-The project was started with a multi-threading skeleton by Gunnar Schaefer. Kiefer Katovich then built the current system on top of this and got the basic process working. Bob Dougherty refactored the dicom finder to use a more robust ftp-based method and incorporated nipy realignment tools to make a simple real-time subject motion tracker.
+
+The project was started with a multi-threading skeleton by Gunnar Schaefer. Kiefer Katovich then built the current system on top of this and got the basic process working. Bob Dougherty refactored the dicom finder to use a more robust ftp-based method and incorporated nipy realignment tools to make a simple real-time subject motion tracker. Michael Waskom refactored the above work into a more modular, testable system.
 
 Getting started
--------
-See rtmotion.py for a high-level overview of how to set up a mutithreaded real-time app. rtfmri.py is a little more complex example for doung real-time fMRI for neuro-feedback.
+---------------
+
+Interfacing with the scanner is accomplished through the `ScannerInterface` class. If the test ftp server is running, you can connect to it by doing:
+
+```python
+from rtfmri import ScannerInterface
+scanner = ScannerInterface("localhost", 2121, base_dir="test_data")
+scanner.start()
+```
+
+This will launch several threads in the background which will poll the scanner for new dicom files, extact the image data from them, and assemble the images into complete volumes (represented as `nibabel.Nifti1Image` objects). Internally, these are stored in a first-in-first-out Python `Queue`. The `ScannerInterface` object exposes a `get_volume()` method to pull volumes off that queue. (It is a wrapper around the `Queue.get()` method).
+
+To use the real-time motion analyzer, you need to initalize a `Queue` object (part of the Python standard library) and pass it to the `MotionAnalyzer` class, which also takes a reference to the scanner interface:
+
+```python
+from rtfmri import MotionAnalyzer
+from Queue import Queue
+
+results = Queue()
+rtmotion = MotionAnalyzer(scanner, results)
+rtmotion.start()
+```
+
+The code will then run in the backgound and add a dictionary to the result queue for each volume with summary statistics about the motion on that frame. These can be retrived by calling `results.get()`.
+
+These objects are thread-based, and you need to take an extra step so that they will listen to keyboard interrupts:
+
+```python
+from rtfmri import setup_exit_handler
+setup_exit_handler(scanner, rtmotion)
+```
+
+You can also shut the threads down directly in your code:
+
+```python
+scanner.shutdown()
+rtmotion.halt()
+rtmotion.join()
+```
+
+Dependencies
+------------
+
+Main scanner interface:
+
+- Python 2.7
+- numpy
+- nibabel
+- pydicom
+
+Real-time motion analyzer:
+
+- nipy 0.4+
+
+Motion analyzer web-app:
+
+- bokeh 0.7+
 
 License
 -------
 Copyright (c) 2012 Gunnar Schaefer
 Copyright (c) 2012 Kiefer Katovich
-Copyright (c) 2013 Bob Dougherty
+Copyright (c) 2013-2015 Bob Dougherty
+Copyright (c) 2014-2015 michael Waskom
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 

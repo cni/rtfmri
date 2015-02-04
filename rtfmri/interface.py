@@ -69,7 +69,6 @@ class ScannerInterface(object):
 
 def setup_exit_handler(scanner, analyzer):
     """Method that will let us ctrl-c the object and kill threads."""
-    # TODO this currently does not work?
     def exit(signum, stack):
         scanner.shutdown()
         analyzer.halt()
