@@ -9,7 +9,7 @@ if __name__ == "__main__":
 
     output_server("rtfmri_prototype")
 
-    rot_p = figure(plot_height=300, plot_width=700,
+    rot_p = figure(plot_height=250, plot_width=700,
                    tools="", title="Rotation")
 
     rot_colors = map(sns.mpl.colors.rgb2hex, sns.color_palette("Reds_d", 3))
@@ -17,7 +17,7 @@ if __name__ == "__main__":
         rot_p.line([], [], name="rot_" + ax,
                    color=color, line_width=2, legend=ax)
 
-    trans_p = figure(plot_height=300, plot_width=700,
+    trans_p = figure(plot_height=250, plot_width=700,
                    tools="", title="Translation")
 
     trans_colors = map(sns.mpl.colors.rgb2hex, sns.color_palette("Blues_d", 3))
@@ -25,7 +25,7 @@ if __name__ == "__main__":
         trans_p.line([], [], name="trans_" + ax,
                      color=color, line_width=2, legend=ax)
 
-    rms_p = figure(plot_height=300, plot_width=700,
+    rms_p = figure(plot_height=250, plot_width=700,
                    tools="", title="Displacement")
 
     rms_colors = map(sns.mpl.colors.rgb2hex, sns.color_palette("Greens_d", 2))
