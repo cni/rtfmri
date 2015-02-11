@@ -5,7 +5,7 @@ Real-time interface for a GE MRI system.
 
 Project Goal
 ------------
-Our goal is to process functional MRI data in near real-time, as the brain measurements are made. There are several potential applications for such a system, including neuro-feedback experiments, and well as real-time monitoring of data quality for any study.
+Our goal is to process functional MRI data in near real-time as brain measurements are made. Potential applications for this system include neuro-feedback experiments and real-time monitoring of data quality for any study.
 
 History
 -------
