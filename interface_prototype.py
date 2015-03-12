@@ -1,3 +1,5 @@
+import sys
+import argparse
 from Queue import Queue, Empty
 from bokeh.plotting import figure, output_server, cursession, show, VBox
 import seaborn as sns
@@ -6,6 +8,15 @@ import seaborn as sns
 from rtfmri import ScannerInterface, MotionAnalyzer, setup_exit_handler
 
 if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-hostname", default="cnimr")
+    parser.add_argument("-port", default=21, type=int)
+    parser.add_argument("-username", default="")
+    parser.add_argument("-password", default="")
+    parser.add_argument("-base_dir", default="/export/home1/sdc_image_pool/images")
+    parser.add_argument("-debug_level", default=0)
+    args = parser.parse_args()
 
     output_server("rtfmri_prototype")
 
@@ -33,7 +44,9 @@ if __name__ == "__main__":
         rms_p.line([], [], name="rms_" + kind,
                      color=color, line_width=2, legend=kind)
 
-    scanner = ScannerInterface("localhost", 2121, base_dir="test_data")
+    scanner = ScannerInterface(hostname=args.hostname, port=args.port,
+                               username=args.username, password=args.password,
+                               base_dir=args.base_dir, ftp_debug_level=args.debug_level)
     result_q = Queue()
     rtmotion = MotionAnalyzer(scanner, result_q)
 
@@ -53,7 +66,7 @@ if __name__ == "__main__":
                 for ax in "xyz":
 
                     ds = fig.select({"name": kind + "_" + ax})[0].data_source
-                    
+
                     if result["new_acquisition"]:
                         x = [next_x]
                     else:
