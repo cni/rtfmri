@@ -46,7 +46,12 @@ class SeriesFinder(Finder):
             if self.current_series is None:
                 # Load up all series for the current exam
                 for series in self.scanner.series_dirs():
-                    self.queue.put(series)
+
+                    # We are only interested in timeseries data
+                    latest_info = self.scanner.series_info(series)
+                    if latest_info["NumTimepoints"] > 1:
+                        self.queue.put(series)
+
                 self.current_series = series
             else:
                 # Only do anything if there's a new series
@@ -61,11 +66,8 @@ class SeriesFinder(Finder):
                     latest_info = self.scanner.series_info(latest_series)
 
                     # We are only interested in timeseries data
-                    if latest_info["NumTimepoints"] < 6:
-                        continue
-
-                    # If we get to here, we want this series in the queue
-                    self.queue.put(latest_series)
+                    if latest_info["NumTimepoints"] > 1:
+                        self.queue.put(latest_series)
 
             sleep(self.interval)
 
@@ -192,7 +194,7 @@ class Volumizer(Finder):
             patient_id=dcm.PatientID,
             series_description=dcm.SeriesDescription,
             tr=float(dcm.RepetitionTime) / 1000,
-            ntp=float(dcm.NumberofTemporalPositions),
+            ntp=float(dcm.NumberOfTemporalPositions),
             image=image_object
             )
 
