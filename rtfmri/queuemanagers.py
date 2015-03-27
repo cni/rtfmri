@@ -3,10 +3,13 @@ from __future__ import print_function, division
 from threading import Thread
 from Queue import Empty
 from time import sleep
+import logging
 
 import numpy as np
 import nibabel as nib
 
+logger = logging.getLogger("rtfmri")
+logger.setLevel(logging.DEBUG)
 
 class Finder(Thread):
     """Base class that uses a slightly different approach to thread control."""
@@ -44,12 +47,18 @@ class SeriesFinder(Finder):
         while self.alive:
 
             if self.current_series is None:
+                logger.debug("Starting series collection")
+
                 # Load up all series for the current exam
                 for series in self.scanner.series_dirs():
+
+                    logger.debug("Checking series {}".format(series))
 
                     # We are only interested in timeseries data
                     latest_info = self.scanner.series_info(series)
                     if latest_info["NumTimepoints"] > 1:
+                        logger.debug(("Series appears to be 4D; "
+                                      "adding to series queue"))
                         self.queue.put(series)
 
                 self.current_series = series
@@ -57,6 +66,8 @@ class SeriesFinder(Finder):
                 # Only do anything if there's a new series
                 latest_series = self.scanner.latest_series
                 if self.current_series != latest_series:
+
+                    logger.debug("Found new series: {}".format(series))
 
                     # Update what we think the current series is
                     self.current_series = latest_series
@@ -67,6 +78,8 @@ class SeriesFinder(Finder):
 
                     # We are only interested in timeseries data
                     if latest_info["NumTimepoints"] > 1:
+                        logger.debug(("Series appears to be 4D; "
+                                      "adding to series queue"))
                         self.queue.put(latest_series)
 
             sleep(self.interval)
@@ -111,6 +124,10 @@ class DicomFinder(Finder):
                 new_files = [f for f in series_files
                              if f not in self.dicom_files]
 
+                if new_files:
+                    logger.debug(("Putting {:d} files into dicom queue"
+                                  .format(len(new_files))))
+
                 # Place each new file onto the queue
                 for fname in new_files:
                     self.dicom_q.put(self.scanner.retrieve_dicom(fname))
@@ -122,6 +139,9 @@ class DicomFinder(Finder):
 
                 # Grab the next series path off the queue
                 self.current_series = self.series_q.get()
+
+                logger.debug(("Beginning DICOM collection for new series: {}"
+                              .format(self.current_series)))
 
                 # Reset the set of dicom files. Once we've moved on to
                 # the next series, we don't need to track these any more
@@ -231,15 +251,19 @@ class Volumizer(Finder):
             # and space (i.e. the index is the same for interleaved or
             # not sequential acquisitisions) so we can trust it to put
             # the volumes in the correct order.
-            current_slice = dcm.InstanceNumber
+            current_slice = int(dcm.InstanceNumber)
 
             if instance_numbers_needed is None:
                 # This is the first slice we've gotten from the volume
                 # we are currently building, so figure out all of the
                 # instance numbers we will need
+                logger.debug("Collecting slices for new volume")
                 last_slice = current_slice + slices_per_volume
                 instance_numbers_needed = list(range(current_slice,
                                                      last_slice))
+                logger.debug("Collecting slices for new volume")
+                logger.debug(("Looking for the following instance numbers: {}"
+                              .format(instance_numbers_needed)))
                 instance_numbers_gathered = [current_slice]
                 current_slices = [dcm]
             else:
@@ -250,6 +274,7 @@ class Volumizer(Finder):
             if instance_numbers_gathered == instance_numbers_needed:
 
                 # Assemble all the slices together into a nibabel object
+                logger.debug("Assembling full volume")
                 volume = self.assemble_volume(current_slices)
 
                 # Put that object on the dicom queue
