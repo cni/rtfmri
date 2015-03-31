@@ -57,7 +57,7 @@ Most users will be interested in the web-app bassed interface for viewing the re
 
 ```
 bokeh-server &
-python interface_prototype.py
+python interface_prototype.py -hostname localhost -port 2121 -base_dir test_data
 ```
 
 The current implementation of this app is highly experimental and will change. Currently it just shows the results from the current run and will refresh the plots when a new run starts on the scanner.
