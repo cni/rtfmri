@@ -51,7 +51,8 @@ class TestFinders(object):
         if self.no_server:
             raise SkipTest
 
-        series_dirs = self.client.series_dirs()
+        series_dirs = [s for s in self.client.series_dirs()
+                       if self.client.series_info(s)["NumTimepoints"] > 6]
 
         q = Queue()
         f = qm.SeriesFinder(self.client, q)
@@ -155,6 +156,14 @@ class TestFinders(object):
         dicom_q = Queue()
         series = "test_data/p004/e4120/4120_4_1_dicoms"
         files = self.client.series_files(series)[:80]
+
+        # Randomize the order of the files
+        # The dicoms in the test dataset happen to be in the
+        # correct temporal order when sorted by file name, but
+        # this is not garunteed and the code should be able to
+        # handle slices that are out of order
+        files = np.random.RandomState(0).permutation(files)
+
         for f in files:
             dicom_q.put(self.client.retrieve_dicom(f))
 

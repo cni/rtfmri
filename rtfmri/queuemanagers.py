@@ -57,7 +57,7 @@ class SeriesFinder(Finder):
 
                     # We are only interested in timeseries data
                     latest_info = self.scanner.series_info(series)
-                    if latest_info["NumTimepoints"] > 1:
+                    if latest_info["NumTimepoints"] > 6:
                         logger.debug(("Series appears to be 4D; "
                                       "adding to series queue"))
                         self.queue.put(series)
@@ -202,6 +202,18 @@ class Volumizer(Finder):
 
         return affine
 
+    def dicom_esa(self, dcm):
+        """Extract the exam, series, and acquisition metadata.
+
+        These three values will uniquely identiy the scanner run.
+
+        """
+        exam = int(dcm.StudyID)
+        series = int(dcm.SeriesNumber)
+        acquisition = int(dcm.AcquisitionNumber)
+
+        return exam, series, acquisition
+
     def assemble_volume(self, slices):
         """Turn a list of dicom slices into a nibabel volume and metadata."""
         dcm = slices[0]
@@ -217,10 +229,11 @@ class Volumizer(Finder):
         image_object = nib.Nifti1Image(image_data, affine)
 
         # Build the volume dictionary we will put in the dicom queue
+        exam, series, acquisition = self.dicom_esa(dcm)
         volume = dict(
-            exam=int(dcm.StudyID),
-            series=int(dcm.SeriesNumber),
-            acquisition=int(dcm.AcquisitionNumber),
+            exam=exam,
+            series=series,
+            acquisition=acquisition,
             patient_id=dcm.PatientID,
             series_description=dcm.SeriesDescription,
             tr=float(dcm.RepetitionTime) / 1000,
@@ -235,6 +248,7 @@ class Volumizer(Finder):
         # Initialize the list we'll using to track progress
         instance_numbers_needed = None
         instance_numbers_gathered = []
+        current_esa = None
         current_slices = []
 
         while self.alive:
@@ -258,6 +272,15 @@ class Volumizer(Finder):
                 slices_per_volume = getattr(dcm, "ImagesInAcquisition")
             slices_per_volume = int(slices_per_volume)
 
+            # Determine if this is a slice from a new acquisition
+            this_esa = self.dicom_esa(dcm)
+            if current_esa is None or this_esa != current_esa:
+                # Begin tracking the slices we need for the first volume
+                # from this acquisition
+                instance_numbers_needed = np.arange(slices_per_volume) + 1
+                current_esa = this_esa
+                logger.debug("Collecting slices for new scanner run")
+
             # Get the DICOM instance for this volume
             # This is an incremental index that reflects position in time
             # and space (i.e. the index is the same for interleaved or
@@ -265,22 +288,9 @@ class Volumizer(Finder):
             # the volumes in the correct order.
             current_slice = int(dcm.InstanceNumber)
 
-            if instance_numbers_needed is None:
-                # This is the first slice we've gotten from the volume
-                # we are currently building, so figure out all of the
-                # instance numbers we will need
-                last_slice = current_slice + slices_per_volume
-                instance_numbers_needed = list(range(current_slice,
-                                                     last_slice))
-                logger.debug("Collecting slices for new volume")
-                logger.debug(("Looking for the following instance numbers: {}"
-                              .format(instance_numbers_needed)))
-                instance_numbers_gathered.append(current_slice)
-                current_slices.append(dcm)
-            else:
-                # Add this slice index and dicom object to current list
-                instance_numbers_gathered.append(current_slice)
-                current_slices.append(dcm)
+            # Add this slice index and dicom object to current list
+            instance_numbers_gathered.append(current_slice)
+            current_slices.append(dcm)
 
             if set(instance_numbers_needed) <= set(instance_numbers_gathered):
 
@@ -305,5 +315,5 @@ class Volumizer(Finder):
                 # Put that object on the dicom queue
                 self.volume_q.put(volume)
 
-                # Reset the list we're using to track progress
-                instance_numbers_needed = None
+                # Update the array of slices we need for the next volume
+                instance_numbers_needed += slices_per_volume
