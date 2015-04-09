@@ -8,7 +8,7 @@ import logging
 import numpy as np
 import nibabel as nib
 
-logging.basicConfig(level=logging.DEBUG)
+
 logger = logging.getLogger(__name__)
 
 
@@ -279,7 +279,9 @@ class Volumizer(Finder):
                 # from this acquisition
                 instance_numbers_needed = np.arange(slices_per_volume) + 1
                 current_esa = this_esa
-                logger.debug("Collecting slices for new scanner run")
+                logger.debug(("Collecting slices for new scanner run - "
+                              "(exam: {} series: {} acquisition: {})"
+                              .format(*current_esa)))
 
             # Get the DICOM instance for this volume
             # This is an incremental index that reflects position in time
@@ -309,7 +311,9 @@ class Volumizer(Finder):
                     instance_numbers_gathered.pop(slice_index)
 
                 # Assemble all the slices together into a nibabel object
-                logger.debug("Assembling full volume")
+                logger.debug(("Assembling full volume for slices {:d}-{:d}"
+                              .format(min(instance_numbers_needed),
+                                      max(instance_numbers_needed))))
                 volume = self.assemble_volume(volume_slices)
 
                 # Put that object on the dicom queue
