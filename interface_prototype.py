@@ -1,8 +1,13 @@
 import sys
+import logging
 import argparse
 from Queue import Queue, Empty
 from bokeh.plotting import figure, output_server, cursession, show, VBox
 import seaborn as sns
+
+
+logging.basicConfig()
+logger = logging.getLogger("rtfmri")
 
 
 from rtfmri import ScannerInterface, MotionAnalyzer, setup_exit_handler
@@ -15,8 +20,11 @@ if __name__ == "__main__":
     parser.add_argument("-username", default="")
     parser.add_argument("-password", default="")
     parser.add_argument("-base_dir", default="/export/home1/sdc_image_pool/images")
-    parser.add_argument("-debug_level", default=0)
+    parser.add_argument("-debug", action="store_true")
     args = parser.parse_args()
+
+    if args.debug:
+        logger.setLevel(logging.DEBUG)
 
     output_server("rtfmri_prototype")
 
@@ -46,7 +54,7 @@ if __name__ == "__main__":
 
     scanner = ScannerInterface(hostname=args.hostname, port=args.port,
                                username=args.username, password=args.password,
-                               base_dir=args.base_dir, ftp_debug_level=args.debug_level)
+                               base_dir=args.base_dir)
     result_q = Queue()
     rtmotion = MotionAnalyzer(scanner, result_q)
 

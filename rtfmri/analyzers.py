@@ -1,6 +1,8 @@
 """Thread-based objects that analyze data as it arrives in the queues."""
 from __future__ import print_function, division
 import sys
+import time
+import logging
 import contextlib
 from cStringIO import StringIO
 from Queue import Empty
@@ -11,6 +13,9 @@ import numpy as np
 from nipy.algorithms.registration import HistogramRegistration, Rigid
 
 from .queuemanagers import Finder
+
+
+logger = logging.getLogger(__name__)
 
 
 class MotionAnalyzer(Finder):
@@ -138,6 +143,10 @@ class MotionAnalyzer(Finder):
 
             # Check if we need to reset the volume counter
             if self.new_scanner_run(vol):
+                logger.debug(("Received first volume from new scanner run - "
+                              "exam: {} series: acquisition: {}"
+                              .format(vol["exam"], vol["series"],
+                                      vol["acquisition"])))
                 self.ref_vol = {}
                 vol_number = 0
 
@@ -151,6 +160,7 @@ class MotionAnalyzer(Finder):
             elif vol_number == self.skip_vols:
                 # Update the reference volume to start here
                 self.ref_vol = vol
+                logger.debug("Assigning new reference volume")
 
                 # Set the previous affine matrix to identity
                 self.pre_T = Rigid(np.eye(4))
@@ -168,10 +178,14 @@ class MotionAnalyzer(Finder):
                 continue
 
             # Compute the transformation to the reference image
+            start = time.time()
             T = self.compute_registration(vol["image"],
                                           self.ref_vol["image"],
                                           init=self.pre_T.copy(),
                                           interp="tri")
+            end = time.time()
+            logger.debug(("Computed motion for volume {:d} (took {:d} ms)"
+                          .format(vol_number, int((end - start) * 1000))))
 
             # Compute the RMS displacement to the reference volume
             rms_ref = self.compute_rms(Rigid(np.eye(4)), T)

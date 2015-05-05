@@ -8,8 +8,9 @@ import logging
 import numpy as np
 import nibabel as nib
 
-logger = logging.getLogger("rtfmri")
-logger.setLevel(logging.DEBUG)
+
+logger = logging.getLogger(__name__)
+
 
 class Finder(Thread):
     """Base class that uses a slightly different approach to thread control."""
@@ -56,7 +57,7 @@ class SeriesFinder(Finder):
 
                     # We are only interested in timeseries data
                     latest_info = self.scanner.series_info(series)
-                    if latest_info["NumTimepoints"] > 1:
+                    if latest_info["NumTimepoints"] > 6:
                         logger.debug(("Series appears to be 4D; "
                                       "adding to series queue"))
                         self.queue.put(series)
@@ -89,6 +90,15 @@ class DicomFinder(Finder):
     """Manage a queue of DICOM files on the scanner.
 
     This class talks to the scanner and to a separately-managed series queue.
+
+    Note
+    ----
+
+    The queue order will reflect the timestamps and filenames of the dicom
+    files on the scanner. This is *not* guaranteed to order the files in the
+    actual order of acquisition. Downstream components of the processing
+    pipeline should inspect the files for metadata that can be used to
+    put them in the right order.
 
     """
     def __init__(self, scanner, series_q, dicom_q, interval=1):
@@ -154,7 +164,7 @@ class DicomFinder(Finder):
 class Volumizer(Finder):
     """Reconstruct MRI volumes and manage a queue of them.
 
-    This class talks to the Dicome queue, but does not need to talk to
+    This class talks to the Dicom queue, but does not need to talk to
     the scanner.
 
     """
@@ -192,6 +202,18 @@ class Volumizer(Finder):
 
         return affine
 
+    def dicom_esa(self, dcm):
+        """Extract the exam, series, and acquisition metadata.
+
+        These three values will uniquely identiy the scanner run.
+
+        """
+        exam = int(dcm.StudyID)
+        series = int(dcm.SeriesNumber)
+        acquisition = int(dcm.AcquisitionNumber)
+
+        return exam, series, acquisition
+
     def assemble_volume(self, slices):
         """Turn a list of dicom slices into a nibabel volume and metadata."""
         dcm = slices[0]
@@ -207,10 +229,11 @@ class Volumizer(Finder):
         image_object = nib.Nifti1Image(image_data, affine)
 
         # Build the volume dictionary we will put in the dicom queue
+        exam, series, acquisition = self.dicom_esa(dcm)
         volume = dict(
-            exam=int(dcm.StudyID),
-            series=int(dcm.SeriesNumber),
-            acquisition=int(dcm.AcquisitionNumber),
+            exam=exam,
+            series=series,
+            acquisition=acquisition,
             patient_id=dcm.PatientID,
             series_description=dcm.SeriesDescription,
             tr=float(dcm.RepetitionTime) / 1000,
@@ -224,6 +247,9 @@ class Volumizer(Finder):
         """This function gets looped over repetedly while thread is alive."""
         # Initialize the list we'll using to track progress
         instance_numbers_needed = None
+        instance_numbers_gathered = []
+        current_esa = None
+        current_slices = []
 
         while self.alive:
 
@@ -246,6 +272,17 @@ class Volumizer(Finder):
                 slices_per_volume = getattr(dcm, "ImagesInAcquisition")
             slices_per_volume = int(slices_per_volume)
 
+            # Determine if this is a slice from a new acquisition
+            this_esa = self.dicom_esa(dcm)
+            if current_esa is None or this_esa != current_esa:
+                # Begin tracking the slices we need for the first volume
+                # from this acquisition
+                instance_numbers_needed = np.arange(slices_per_volume) + 1
+                current_esa = this_esa
+                logger.debug(("Collecting slices for new scanner run - "
+                              "(exam: {} series: {} acquisition: {})"
+                              .format(*current_esa)))
+
             # Get the DICOM instance for this volume
             # This is an incremental index that reflects position in time
             # and space (i.e. the index is the same for interleaved or
@@ -253,32 +290,34 @@ class Volumizer(Finder):
             # the volumes in the correct order.
             current_slice = int(dcm.InstanceNumber)
 
-            if instance_numbers_needed is None:
-                # This is the first slice we've gotten from the volume
-                # we are currently building, so figure out all of the
-                # instance numbers we will need
-                logger.debug("Collecting slices for new volume")
-                last_slice = current_slice + slices_per_volume
-                instance_numbers_needed = list(range(current_slice,
-                                                     last_slice))
-                logger.debug("Collecting slices for new volume")
-                logger.debug(("Looking for the following instance numbers: {}"
-                              .format(instance_numbers_needed)))
-                instance_numbers_gathered = [current_slice]
-                current_slices = [dcm]
-            else:
-                # Add this slice index and dicom object to current list
-                instance_numbers_gathered.append(current_slice)
-                current_slices.append(dcm)
+            # Add this slice index and dicom object to current list
+            instance_numbers_gathered.append(current_slice)
+            current_slices.append(dcm)
 
-            if instance_numbers_gathered == instance_numbers_needed:
+            if set(instance_numbers_needed) <= set(instance_numbers_gathered):
+
+                # Files are not guaranteed to enter the DICOM queue in any
+                # particular order. If we get here, then we have picked up
+                # all the slices we need for this volume, but they might be
+                # out of order, and we might have other slices that belong to
+                # the next volume. So we need to figure out the correct order
+                # and then extract what we need, leaving the rest to be dealt
+                # with later.
+
+                volume_slices = []
+                for slice_number in instance_numbers_needed:
+                    slice_index = instance_numbers_gathered.index(slice_number)
+                    volume_slices.append(current_slices.pop(slice_index))
+                    instance_numbers_gathered.pop(slice_index)
 
                 # Assemble all the slices together into a nibabel object
-                logger.debug("Assembling full volume")
-                volume = self.assemble_volume(current_slices)
+                logger.debug(("Assembling full volume for slices {:d}-{:d}"
+                              .format(min(instance_numbers_needed),
+                                      max(instance_numbers_needed))))
+                volume = self.assemble_volume(volume_slices)
 
                 # Put that object on the dicom queue
                 self.volume_q.put(volume)
 
-                # Reset the list we're using to track progress
-                instance_numbers_needed = None
+                # Update the array of slices we need for the next volume
+                instance_numbers_needed += slices_per_volume
