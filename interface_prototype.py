@@ -20,6 +20,7 @@ if __name__ == "__main__":
     parser.add_argument("-username", default="")
     parser.add_argument("-password", default="")
     parser.add_argument("-base_dir", default="/export/home1/sdc_image_pool/images")
+    parser.add_argument("-skip", default=0, type=int)
     parser.add_argument("-debug", action="store_true")
     args = parser.parse_args()
 
@@ -55,6 +56,8 @@ if __name__ == "__main__":
     scanner = ScannerInterface(hostname=args.hostname, port=args.port,
                                username=args.username, password=args.password,
                                base_dir=args.base_dir)
+    scanner.series_finder.skip = args.skip
+
     result_q = Queue()
     rtmotion = MotionAnalyzer(scanner, result_q)
 
