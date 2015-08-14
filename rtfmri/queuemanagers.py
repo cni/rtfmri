@@ -6,7 +6,6 @@ from time import sleep
 import logging
 
 import numpy as np
-import nibabel as nib
 from dcmstack import DicomStack
 
 
@@ -216,36 +215,7 @@ class Volumizer(Finder):
         return exam, series, acquisition
 
     def assemble_volume(self, slices):
-        """Turn a list of dicom slices into a nibabel volume and metadata."""
-        dcm = slices[0]
-
-        # Build the array of image data
-        x, y = dcm.pixel_array.shape
-        image_data = np.empty((x, y, len(slices)))
-        for z, slice in enumerate(slices):
-            image_data[..., z] = slice.pixel_array
-
-        # Turn it into a nibabel object
-        affine = self.generate_affine_matrix(dcm)
-        image_object = nib.Nifti1Image(image_data, affine)
-
-        # Build the volume dictionary we will put in the dicom queue
-        exam, series, acquisition = self.dicom_esa(dcm)
-        volume = dict(
-            exam=exam,
-            series=series,
-            acquisition=acquisition,
-            patient_id=dcm.PatientID,
-            series_description=dcm.SeriesDescription,
-            tr=float(dcm.RepetitionTime) / 1000,
-            ntp=float(dcm.NumberOfTemporalPositions),
-            image=image_object
-            )
-
-        return volume
-
-    def assemble_volume_dcmstack(self, slices):
-
+        """Put each dicom slice together into a nibabel nifti image object."""
         # Build a DicomStack from each of the slices
         stack = DicomStack()
         for f in slices:
@@ -341,7 +311,7 @@ class Volumizer(Finder):
                 logger.debug(("Assembling full volume for slices {:d}-{:d}"
                               .format(min(instance_numbers_needed),
                                       max(instance_numbers_needed))))
-                volume = self.assemble_volume_dcmstack(volume_slices)
+                volume = self.assemble_volume(volume_slices)
 
                 # Put that object on the dicom queue
                 self.volume_q.put(volume)
