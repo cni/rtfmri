@@ -176,32 +176,6 @@ class Volumizer(Finder):
         self.dicom_q = dicom_q
         self.volume_q = volume_q
 
-    def generate_affine_matrix(self, dcm):
-        """Use DICOM metadata to generate an affine matrix."""
-        # The notes in the original code say this has to be done because
-        # dicom.get_affine() doesn't work. I think that's referring to
-        # nibabel.nicom.dicomwrappers.Wrapper, which comes with a warning
-        # that it only works for Siemens files. This method can probably be
-        # eliminated in the future when nibabel works with GE files.
-
-        # Begin with an identity matrix
-        affine = np.eye(4)
-
-        # Figure out the three dimensions of the voxels
-        if ("PixelSpacing" in dcm) and ("SpacingBetweenSlices" in dcm):
-            x, y = dcm.PixelSpacing
-            z = dcm.SpacingBetweenSlices
-            mm_per_vox = list(map(float, [x, y, z]))
-        else:
-            mm_per_vox = [0.] * 3
-        affine[:3, :3] = np.diag(mm_per_vox)
-
-        # Get the patient position
-        x, y, z = dcm.ImagePositionPatient
-        affine[:3, 3] = -float(x), -float(y), float(z)
-
-        return affine
-
     def dicom_esa(self, dcm):
         """Extract the exam, series, and acquisition metadata.
 
