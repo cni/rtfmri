@@ -7,6 +7,7 @@ import logging
 
 import numpy as np
 import nibabel as nib
+from dcmstack import DicomStack
 
 
 logger = logging.getLogger(__name__)
@@ -243,6 +244,32 @@ class Volumizer(Finder):
 
         return volume
 
+    def assemble_volume_dcmstack(self, slices):
+
+        # Build a DicomStack from each of the slices
+        stack = DicomStack()
+        for f in slices:
+            stack.add_dcm(f)
+
+        # Convert into a Nibabel Nifti object
+        nii_img = stack.to_nifti(voxel_order="")
+
+        # Build the volume dictionary we will put in the dicom queue
+        dcm = slices[0]
+        exam, series, acquisition = self.dicom_esa(dcm)
+        volume = dict(
+            exam=exam,
+            series=series,
+            acquisition=acquisition,
+            patient_id=dcm.PatientID,
+            series_description=dcm.SeriesDescription,
+            tr=float(dcm.RepetitionTime) / 1000,
+            ntp=float(dcm.NumberOfTemporalPositions),
+            image=nii_img,
+            )
+
+        return volume
+
     def run(self):
         """This function gets looped over repetedly while thread is alive."""
         # Initialize the list we'll using to track progress
@@ -314,7 +341,7 @@ class Volumizer(Finder):
                 logger.debug(("Assembling full volume for slices {:d}-{:d}"
                               .format(min(instance_numbers_needed),
                                       max(instance_numbers_needed))))
-                volume = self.assemble_volume(volume_slices)
+                volume = self.assemble_volume_dcmstack(volume_slices)
 
                 # Put that object on the dicom queue
                 self.volume_q.put(volume)
