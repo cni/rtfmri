@@ -24,6 +24,8 @@ class ScannerInterface(object):
         to the underlying scanner client objects.
 
         """
+        # TODO Should probably make it easier to pass parameters down to
+        # the different finders as they will likely get more functionality
         # Keep two different FTP clients for the series and
         # volume queues so they don't interfere with each other
         client1 = ScannerClient(*args, **kwargs)

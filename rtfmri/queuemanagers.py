@@ -33,15 +33,36 @@ class SeriesFinder(Finder):
     are timeseries, because that is what is useful for real-time analysis.
 
     """
-    def __init__(self, scanner, queue, interval=1):
+    def __init__(self, scanner, queue, interval=1, skip=0):
         """Initialize the queue."""
         super(SeriesFinder, self).__init__(interval)
 
         self.scanner = scanner
         self.current_series = None
+        self.skip = None
+        self.skip_set = set()
 
         self.queue = queue
         self.alive = True
+
+    def put_if_timeseries(self, series, min_timepoints=6):
+        """Check if series appears 4D and add to the queue if so."""
+        latest_info = self.scanner.series_info(series)
+        if latest_info["NumTimepoints"] > min_timepoints:
+            logger.debug(("Series appears to be 4D; adding to series queue"))
+            self.queue.put(series)
+        else:
+            logger.debug(("Series does not appear to be 4D; skipping"))
+
+    def should_skip(self, series):
+        """Determine if this is an early series that should be skipped."""
+        if series in self.skip_set:
+            return True
+        elif len(self.skip_set) < self.skip:
+            self.skip_set.add(series)
+            logger.debug(("Skipping series"))
+            return True
+        return False
 
     def run(self):
         """This function gets looped over repetedly while thread is alive."""
@@ -55,12 +76,10 @@ class SeriesFinder(Finder):
 
                     logger.debug("Checking series {}".format(series))
 
-                    # We are only interested in timeseries data
-                    latest_info = self.scanner.series_info(series)
-                    if latest_info["NumTimepoints"] > 6:
-                        logger.debug(("Series appears to be 4D; "
-                                      "adding to series queue"))
-                        self.queue.put(series)
+                    if self.should_skip(series):
+                        continue
+
+                    self.put_if_timeseries(series)
 
                 self.current_series = series
             else:
@@ -68,20 +87,13 @@ class SeriesFinder(Finder):
                 latest_series = self.scanner.latest_series
                 if self.current_series != latest_series:
 
+                    self.current_series = latest_series
                     logger.debug("Found new series: {}".format(series))
 
-                    # Update what we think the current series is
-                    self.current_series = latest_series
+                    if self.should_skip(latest_series):
+                        continue
 
-                    # Get a dictionary of information about it
-                    # Be explicit to avoid possible race condition
-                    latest_info = self.scanner.series_info(latest_series)
-
-                    # We are only interested in timeseries data
-                    if latest_info["NumTimepoints"] > 1:
-                        logger.debug(("Series appears to be 4D; "
-                                      "adding to series queue"))
-                        self.queue.put(latest_series)
+                    self.put_if_timeseries(series)
 
             sleep(self.interval)
 
