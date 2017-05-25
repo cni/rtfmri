@@ -8,7 +8,6 @@ import logging
 import numpy as np
 from dcmstack import DicomStack
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -17,7 +16,7 @@ class Finder(Thread):
     def __init__(self, interval):
         """Initialize the Finder."""
         super(Finder, self).__init__()
-
+        self.daemon = True
         self.interval = interval
         self.alive = True
 
@@ -37,14 +36,14 @@ class SeriesFinder(Finder):
         """Initialize the queue."""
         super(SeriesFinder, self).__init__(interval)
 
-        self.scanner = scanner
+        self.scanner = scanner #an ftp server
         self.current_series = None
 
         self.queue = queue
         self.alive = True
 
     def run(self):
-        """This function gets looped over repetedly while thread is alive."""
+        """This function gets looped over repeatedly while thread is alive."""
         while self.alive:
 
             if self.current_series is None:
@@ -179,7 +178,7 @@ class Volumizer(Finder):
     def dicom_esa(self, dcm):
         """Extract the exam, series, and acquisition metadata.
 
-        These three values will uniquely identiy the scanner run.
+        These three values will uniquely identify the scanner run.
 
         """
         exam = int(dcm.StudyID)
@@ -211,13 +210,15 @@ class Volumizer(Finder):
             ntp=float(dcm.NumberOfTemporalPositions),
             image=nii_img,
             )
-
         return volume
+
+    def missing_slices(self, need, have):
+        return set(list(need)) - set(list(have))
 
     def run(self):
         """This function gets looped over repetedly while thread is alive."""
         # Initialize the list we'll using to track progress
-        instance_numbers_needed = None
+        instance_numbers_needed = [] #None
         instance_numbers_gathered = []
         current_esa = None
         current_slices = []
@@ -227,8 +228,13 @@ class Volumizer(Finder):
             try:
                 dcm = self.dicom_q.get(timeout=1)
             except Empty:
-                sleep(self.interval)
-                continue
+                # condition where dicom queue is empty but we
+                # can assemble the next slice
+                if len(instance_numbers_needed) and not self.missing_slices(instance_numbers_needed, instance_numbers_gathered):
+                    pass
+                else:
+                    sleep(self.interval)
+                    continue
 
             try:
                 # This is the dicom tag for "Number of locations"
@@ -242,7 +248,7 @@ class Volumizer(Finder):
                 # The next line is just taken from the original code.
                 slices_per_volume = getattr(dcm, "ImagesInAcquisition")
             slices_per_volume = int(slices_per_volume)
-
+            #logger.debug(("Slices per volume: {}").format(slices_per_volume))
             # Determine if this is a slice from a new acquisition
             this_esa = self.dicom_esa(dcm)
             if current_esa is None or this_esa != current_esa:
@@ -251,7 +257,7 @@ class Volumizer(Finder):
                 instance_numbers_needed = np.arange(slices_per_volume) + 1
                 current_esa = this_esa
                 logger.debug(("Collecting slices for new scanner run - "
-                              "(exam: {} series: {} acquisition: {})"
+                              "\n(exam: {}\n series: {}\n acquisition: {})"
                               .format(*current_esa)))
 
             # Get the DICOM instance for this volume
@@ -263,10 +269,11 @@ class Volumizer(Finder):
 
             # Add this slice index and dicom object to current list
             instance_numbers_gathered.append(current_slice)
+            # missing_slices = ''.join(list(set(instance_numbers_needed)-set(instance_numbers_gathered)))
+            # logger.debug(("Missing slices: {}\n"), ''.join(instance_numbers_gathered))
             current_slices.append(dcm)
 
             if set(instance_numbers_needed) <= set(instance_numbers_gathered):
-
                 # Files are not guaranteed to enter the DICOM queue in any
                 # particular order. If we get here, then we have picked up
                 # all the slices we need for this volume, but they might be

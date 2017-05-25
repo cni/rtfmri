@@ -34,4 +34,10 @@ nosetests.xml
 .project
 .pydevproject
 *.swp
+
+# Data
 test_data
+nick_test_data
+nick_test_subject
+venv
+

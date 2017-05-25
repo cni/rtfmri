@@ -60,11 +60,11 @@ if __name__ == '__main__':
                                'scanner FTP server. The server will accept annonymous connections.\n\n')
     arg_parser.add_argument('-o', '--hostname', default='localhost', help='hostname or ip address (default: localhost)')
     arg_parser.add_argument('-p', '--port', type=int, default=2121, help='port for FTP server (default: 2121)')
-    arg_parser.add_argument('-d', '--datadir', default='test_data', help='directory containing test data (default: ./test_data). Will be fetched if it doesn''t exist.')
+    arg_parser.add_argument('-d', '--datadir', default='.', help='directory containing test data (default: ./test_data). Will be fetched if it doesn''t exist.')
     args = arg_parser.parse_args()
 
     # Ensure that we have the test data
-    get_test_data(data_dir=args.datadir)
+    #get_test_data(data_dir=args.datadir)
 
     authorizer = DummyAuthorizer()
     authorizer.add_anonymous(os.getcwd())
@@ -75,6 +75,3 @@ if __name__ == '__main__':
     address = (args.hostname, args.port)
     server = FTPServer(address, handler)
     server.serve_forever()
-
-
-

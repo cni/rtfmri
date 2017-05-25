@@ -4,10 +4,10 @@ This is the lowest layer of the rtfmri machinery.
 
 """
 from __future__ import print_function
-import os.path as op
 import re
 import ftplib
 import socket
+import os.path as op
 from cStringIO import StringIO
 from datetime import datetime
 
@@ -16,6 +16,7 @@ import dicom
 
 class ScannerClient(object):
     """Client to interface with GE scanner in real-time."""
+
     def __init__(self, hostname="cnimr", port=21,
                  username="", password="",
                  base_dir="/export/home1/sdc_image_pool/images",
@@ -99,7 +100,7 @@ class ScannerClient(object):
         """Parse a UNIX-style ls output from the FTP server."""
         # Sort the file list, respecting alphanumeric order
         self._alphanumeric_sort(file_list)
-
+        file_list = [x for x in file_list if not x.startswith('.') and '.DS_Store' not in x]
         # Now go back through each entry and parse out the useful bits
         contents = []
         for i, entry in enumerate(file_list, 1):
@@ -206,7 +207,7 @@ class ScannerClient(object):
             "Description": first_dicom.SeriesDescription,
             "NumTimepoints": n_timepoints,
             "NumAcquisitions": len(series_files),
-            }
+        }
 
         return series_info
 

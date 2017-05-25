@@ -98,35 +98,6 @@ class TestFinders(object):
             f.halt()
             f.join()
 
-    def test_volumizer_affine(self):
-
-        class MockDicom(object):
-
-            PixelSpacing = ['2', '2']
-            SpacingBetweenSlices = '2.2'
-            ImagePositionPatient = ['-106.289', '-76.0826', '115.279']
-
-            def __contains__(self, name):
-
-                try:
-                    getattr(self, name)
-                    return True
-                except AttributeError:
-                    return False
-
-        want_affine = np.array([
-            [2, 0, 0,   106.289],
-            [0, 2, 0,   76.0826],
-            [0, 0, 2.2, 115.279],
-            [0, 0, 0,   1]]
-            )
-
-        volumizer = qm.Volumizer(None, None)
-        dcm = MockDicom()
-
-        got_affine = volumizer.generate_affine_matrix(dcm)
-
-        np.testing.assert_array_equal(want_affine, got_affine)
 
     def test_volumizer_volume_assembly(self):
 

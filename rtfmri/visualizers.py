@@ -1,7 +1,7 @@
 """High-levelest level visualization class for functional data that wraps
    a full scanner interface."""
 import pdb
-import sys
+import sys, time
 import signal
 import logging
 from random import randint, random
@@ -10,6 +10,8 @@ from time import sleep
 import pygame
 import numpy as np
 from nilearn.input_data import NiftiMasker
+import matplotlib.pyplot as plt
+
 
 logger = logging.getLogger(__name__)
 
@@ -69,11 +71,88 @@ class Visualizer(object):
     def __del__(self):
         self.halt()
 
-class PyGameVisualizer(Visualizer):
+
+class RoiVisualizer(Visualizer):
+    """Class that assumes you want to use a masking object"""
+
+    def __init__(self, interface, masker, timeout=0):
+
+        super(RoiVisualizer, self).__init__(interface, timeout)
+        self.masker = masker
+        # keep track of the ROI's information over time.
+        self.roi_tc = []
+
+    def start_timer(self):
+        self.start = time.time()
+        self.last_time = self.start
+
+    def log_times(self):
+        n = len(self.roi_tc)
+        toc = time.time()
+        start_diff = toc - self.start
+        last_diff  = toc - self.last_time
+        self.last_time = toc
+        print("Time since start: {}".format(start_diff ))
+        print("Time since last: {}".format(last_diff))
+        print("Average since start: {}".format(start_diff/n))
+
+    def update_state(self):
+        logger.debug("Fetching volume...")
+        vol = self.get_volume()
+        roi_mean = self.masker.reduce_volume(vol)
+        self.roi_tc.append(roi_mean)
+        self.state = roi_mean
+
+class TextVisualizer(RoiVisualizer):
+    """
+    Most basic visualizer. Prints out the newest ROI
+    """
+    def draw(self):
+
+        print(self.roi_tc)
+        self.log_times()
+
+
+
+
+class GraphVisualizer(RoiVisualizer):
+    """
+    Very basic visualizer that graphs ROI average time course in real time
+    """
+    def __init__(self, interface, masker, timeout=0):
+        super(GraphVisualizer, self).__init__(interface, masker, timeout)
+        plt.ion()
+        self.old_n = 0
+        self.tic = time.time()
+
+    def draw(self):
+        n = len(self.roi_tc)
+
+        #x = 2*range(2, n-1)
+        x = range(1, n)
+        y = []
+        if n > 1:
+            y = self.roi_tc[1:]
+
+        self.log_times()
+        plt.plot(x, y)
+
+        plt.xlabel('time (s)')
+        plt.ylabel('ROI activation - Raw')
+        plt.title('Neurofeedback!!!')
+        plt.grid(True)
+        #plt.savefig("test.png")
+        plt.show()
+
+        plt.pause(0.1)
+
+
+
+class PyGameVisualizer(RoiVisualizer):
     """ Handle pygame setup"""
 
-    def __init__(self, interface, timeout=0):
-        super(PyGameVisualizer, self).__init__(interface, timeout)
+    def __init__(self, interface, masker, timeout=0):
+        super(PyGameVisualizer, self).__init__(interface, masker, timeout)
         self.interface = interface
         self.bg_color = (0, 0, 0)
         self.clock = pygame.time.Clock()
@@ -99,25 +178,8 @@ class PyGameVisualizer(Visualizer):
         pygame.display.set_caption(title)
 
 
-class RoiVisualizer(PyGameVisualizer):
-    """Class that assumes you want to use a masking object"""
 
-    def __init__(self, interface, masker, timeout=0):
-
-        super(RoiVisualizer, self).__init__(interface, timeout)
-        self.masker = masker
-        # keep track of the ROI's information over time.
-        self.roi_tc = []
-
-    def update_state(self):
-        logger.debug("Fetching volume...")
-        vol = self.get_volume()
-        roi_mean = self.masker.reduce_volume(vol)
-        self.roi_tc.append(roi_mean)
-        self.state = roi_mean
-
-
-class Thermometer(RoiVisualizer):
+class Thermometer(PyGameVisualizer):
     """ The first fully functional visualizer that actually does something.
         Maintains a thermometer displayed on screen consisting of a red
         box that moves up and down a range corresponding to numbers 1 to 100.

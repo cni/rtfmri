@@ -1,9 +1,10 @@
 """High-level interface to manage moving parts of realtime code."""
-import sys
+
+import sys, os, time
 import signal
 from Queue import Queue
-from .client import ScannerClient
-from .queuemanagers import SeriesFinder, DicomFinder, Volumizer
+from client import ScannerClient
+from queuemanagers import SeriesFinder, DicomFinder, Volumizer
 
 
 class ScannerInterface(object):
@@ -17,6 +18,7 @@ class ScannerInterface(object):
     interface with.
 
     """
+
     def __init__(self, *args, **kwargs):
         """Initialize the interface object.
 
@@ -42,8 +44,11 @@ class ScannerInterface(object):
         self.dicom_finder = DicomFinder(client2, series_q, dicom_q)
         self.volumizer = Volumizer(dicom_q, volume_q)
 
+        self.alive = False
+
     def start(self):
         """Start the constituent threads."""
+        self.alive = True
         self.series_finder.start()
         self.dicom_finder.start()
         self.volumizer.start()
@@ -54,25 +59,30 @@ class ScannerInterface(object):
 
     def shutdown(self):
         """Halt and join the threads so we can exit cleanly."""
-        self.series_finder.halt()
-        self.dicom_finder.halt()
-        self.volumizer.halt()
+        if self.alive:
+            self.dicom_finder.halt()
+            self.series_finder.halt()
+            self.volumizer.halt()
 
-        self.series_finder.join()
-        self.dicom_finder.join()
-        self.volumizer.join()
+            self.series_finder.join()
+            self.dicom_finder.join()
+            self.volumizer.join()
+
+            self.alive = False
 
     def __del__(self):
 
         self.shutdown()
 
 
-def setup_exit_handler(scanner, analyzer):
+
+def setup_exit_handler(scanner, analyzer=None):
     """Method that will let us ctrl-c the object and kill threads."""
     def exit(signum, stack):
         scanner.shutdown()
-        analyzer.halt()
-        analyzer.join()
+        if analyzer != None:
+            analyzer.halt()
+            analyzer.join()
         sys.exit(0)
 
     signal.signal(signal.SIGINT, exit)
