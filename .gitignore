@@ -41,3 +41,6 @@ nick_test_data
 nick_test_subject
 venv
 
+threads.py
+rtfmri/tests/cue_test.py
+

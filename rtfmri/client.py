@@ -6,13 +6,23 @@ This is the lowest layer of the rtfmri machinery.
 from __future__ import print_function
 import re
 import ftplib
+import base64
+import getpass
+import os
 import socket
+import sys
+import traceback
+
 import os.path as op
 from cStringIO import StringIO
 from datetime import datetime
 
+import paramiko
 import dicom
 
+import pdb
+
+from profilehooks import timecall
 
 class ScannerClient(object):
     """Client to interface with GE scanner in real-time."""
@@ -35,7 +45,10 @@ class ScannerClient(object):
         # an active FTP server
         try:
             self.connect()
-            self.ftp.set_debuglevel(ftp_debug_level)
+
+            #check avoid problems in subclass; should be a better way...
+            if ftp_debug_level > 0:
+                self.ftp.set_debuglevel(ftp_debug_level)
         except socket.error:
             # Connection refused
             self.ftp = None
@@ -221,4 +234,121 @@ class ScannerClient(object):
 
     def retrieve_dicom(self, filename):
         """Return a file as a dicom object."""
-        return dicom.filereader.read_file(self.retrieve_file(filename))
+        try:
+            return dicom.filereader.read_file(self.retrieve_file(filename))
+        except Exception as e:
+            print(filename)
+            print(type(e).__name__)
+            pdb.set_trace()
+
+
+
+class ScannerSFTPClient(ScannerClient):
+    """The same as scanner client, but with some modifications to use SFTP"""
+    def __init__(self, *args, **kwargs):
+        super(ScannerSFTPClient, self).__init__(*args, **kwargs)
+
+
+    def get_key(self):
+        # get host key, if we know one - taken from
+        # https://raw.githubusercontent.com/paramiko/paramiko/master/demos/demo_sftp.py
+        # Paramiko client configuration
+
+        hostkeytype = None
+        hostkey = None
+        try:
+            host_keys = paramiko.util.load_host_keys(os.path.expanduser('~/.ssh/known_hosts'))
+        except IOError:
+            try:
+                # try ~/ssh/ too, because windows can't have a folder named ~/.ssh/
+                host_keys = paramiko.util.load_host_keys(os.path.expanduser('~/ssh/known_hosts'))
+            except IOError:
+                print('*** Unable to open host keys file')
+                host_keys = {}
+
+        if self.hostname in host_keys:
+            hostkeytype = host_keys[self.hostname].keys()[0]
+            hostkey = host_keys[self.hostname][hostkeytype]
+            print('Using host key of type %s' % hostkeytype)
+
+        if hostkey == None:
+            pass
+            #raise  Exception("No hostkey") # TODO change this to better exception type
+        return hostkey
+
+    def set_pkey(self, pkey_path):
+        """If using a pkey, as is useful for the test server"""
+        self.pkey = paramiko.RSAKey.from_private_key_file(pkey_path)
+
+    def connect(self, UseGSSAPI = True, DoGSSAPIKeyExchange = True):
+        """Connect to the FTP server."""
+        self.hostkey = self.get_key()
+
+        # TODO add a way to set this.
+        self.set_pkey("test.key")
+        self.transport = paramiko.Transport((self.hostname, self.port))
+
+        if self.pkey:
+            self.transport.connect(pkey=self.pkey)
+        else:
+            self.transport.connect(self.hostkey, self.username, self.password,
+                               gss_host=socket.getfqdn(self.hostname),
+                               gss_auth=UseGSSAPI,
+                               gss_kex=DoGSSAPIKeyExchange,
+                               pkey = pkey)
+
+        self.transport.window_size = 2147483647
+        self.transport.packetizer.REKEY_BYTES = pow(2, 40)
+        self.transport.packetizer.REKEY_PACKETS = pow(2, 40)
+
+        self.sftp = paramiko.SFTPClient.from_transport(self.transport)
+
+
+    def reconnect(self):
+        """Reinitialize FTP connection if it was dropped."""
+        # not sure the best way to implement this yet...
+        pass
+
+    def close(self):
+        """Close the connection to the SFTP server (if it exists)."""
+        if self.sftp is not None:
+            self.sftp.close()
+            self.transport.close()
+
+    def _parse_dir_output(self, file_list):
+        """Parse a UNIX-style ls output from the FTP server."""
+        # Sort by modification time; this should work on the scanner.
+        file_list = [x for x in file_list if not x[2].startswith('.') and '.DS_Store' not in x[2]]
+
+        #file list consists of tuples of (name, mtime, size)
+        #now we sort by size
+        file_list.sort(key=lambda x: x[0])
+        return file_list
+
+    def list_dir(self, path):
+        """Return (timestamp, size, name) for contents in a directory."""
+
+        files = self.sftp.listdir(path)
+        file_attr = self.sftp.listdir_attr(path)
+        file_list = [(y.st_atime, y.st_size, x) for x, y in zip(files, file_attr)]
+        # Parse the output and return
+        return self._parse_dir_output(file_list)
+
+    #@timecall
+    def retrieve_file(self, filename):
+        """Return a file as a buffer."""
+        buf = self.sftp.file(filename, mode='r', bufsize=0)
+        buf.seek(0)
+        return buf
+
+    def _latest_entry(self, dir):
+        """Return a path to the most recent entry in `dir`."""
+        contents = self.list_dir(dir)
+
+        # Contents should be sorted, so we want last entry
+        latest_name = contents[-1][2]
+
+        # Build and return the full path
+        path = op.join(dir, latest_name)
+        return path
+

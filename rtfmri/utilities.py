@@ -4,9 +4,19 @@ import serial
 import sys, signal, time
 from datetime import datetime
 
-def start_scan(device = '/dev/tty.usbmodem123451'):
-    if device:
-        device = '/dev/ttyACM0' #this should be the linux path...
+def _get_device(user_os):
+    if user_os == 'mac':
+        device = '/dev/tty.usbmodem123451'
+    elif user_os=="windows":
+        #should be a COM port (eg. COM 4)
+        raise Exception("Not tested on windows.")
+    else:
+         device = '/dev/ttyACM0'
+
+def start_scan(user_os='linux'):
+    """Send the start scan trigger to the scanner."""
+
+    device = _get_device(user_os)
 
     if not os.path.exists(device):
         sys.stderr.write("ERROR: Serial device %r not found!\n\n" % (device,))
@@ -14,6 +24,7 @@ def start_scan(device = '/dev/tty.usbmodem123451'):
 
     ser = serial.Serial(device, 115200, timeout=1)
     #time.sleep(0.05)
+
     # Send an out pulse
     ser.write('[t]\n');
     ser.close()

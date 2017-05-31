@@ -11,7 +11,7 @@ class TestScannerInterface(object):
         # This is mostly just a smoketest to touch parts of the code
 
         scanner = interface.ScannerInterface("localhost", 2121,
-                                             base_dir="test_data")
+                                             base_dir="nick_test_data")
 
         if not scanner.has_ftp_connection:
             raise SkipTest

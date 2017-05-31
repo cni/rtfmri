@@ -22,9 +22,9 @@ if __name__ == '__main__':
 
     ### parameters for the actual scan.
     host="cnimr"
-    port=21,
+    port=22,
     username=""
-    password=""
+    password="testpass"
     base_dir="/export/home1/sdc_image_pool/images"
 
     host = "localhost"
@@ -41,16 +41,18 @@ if __name__ == '__main__':
     masker = Masker('nick_test_subject/naccf_pos.nii')
     #start_scan()
     #Logging some basic info:
-    print(interface.series_finder.scanner.latest_exam)
-    print(interface.series_finder.scanner.latest_series)
+    print(interface.series_finder.client.latest_exam)
+    print(interface.series_finder.client.latest_series)
 
-    #v = TextVisualizer(interface, masker)
-    v = GraphVisualizer(interface, masker)
+    #sys.exit(0)
+
+    v = TextVisualizer(interface, masker)
+    #v = GraphVisualizer(interface, masker)
+    #v = Thermometer(interface, masker)
+    #v.start_display()
     #start_scan()
     v.start_timer()
-    print(interface.series_finder.scanner.latest_exam)
-    print(interface.series_finder.scanner.latest_series)
-    #sys.exit(0)
+    #
     # pdb.set_trace()
 
     v.start_interface()

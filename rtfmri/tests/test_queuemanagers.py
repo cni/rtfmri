@@ -15,10 +15,10 @@ class TestFinder(object):
     def test_control(self):
 
         f = qm.Finder(interval=2)
-        assert f.alive
+        assert not f.stopped()
 
         f.halt()
-        assert not f.alive
+        assert f.stopped()
 
         nt.assert_equal(f.interval, 2)
 

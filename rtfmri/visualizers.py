@@ -35,8 +35,8 @@ class Visualizer(object):
         signal.signal(signal.SIGTERM, self.exit_gracefully)
 
     def exit_gracefully(self, sig, frame):
+        print("Exiting the visualizer gracefully")
         self.halt()
-        sys.exit(0)
 
     def get_volume(self, *args, **kwargs):
         """Gather new information from the interface, ie get volumes"""
@@ -46,7 +46,6 @@ class Visualizer(object):
         """Any visualizer will need a function to update its internal
            representation of the data it's gathering from the interface"""
         new_volume = self.get_volume()
-
         # state never changes in base class
         self.state = self.state
 
@@ -108,12 +107,8 @@ class TextVisualizer(RoiVisualizer):
     Most basic visualizer. Prints out the newest ROI
     """
     def draw(self):
-
         print(self.roi_tc)
         self.log_times()
-
-
-
 
 class GraphVisualizer(RoiVisualizer):
     """
@@ -183,6 +178,8 @@ class Thermometer(PyGameVisualizer):
     """ The first fully functional visualizer that actually does something.
         Maintains a thermometer displayed on screen consisting of a red
         box that moves up and down a range corresponding to numbers 1 to 100.
+
+        TODO: refactor the ugly
     """
 
     def __init__(self, interface, masker, timeout=0):
@@ -269,7 +266,7 @@ class Thermometer(PyGameVisualizer):
         self.update_state()
         buffer_size = 5
         if len(self.roi_tc) > buffer_size:
-            start_ind = max(len(roi.tc) - buffer_size, 0)
+            start_ind = max(len(self.roi_tc) - buffer_size, 0)
             mean = np.mean(self.roi_tc)
             std = np.std(self.roi_tc)
             temp = 50 + 25 * ((self.state - mean) / std)

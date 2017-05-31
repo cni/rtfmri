@@ -3,7 +3,7 @@
 import sys, os, time
 import signal
 from Queue import Queue
-from client import ScannerClient
+from client import ScannerClient, ScannerSFTPClient
 from queuemanagers import SeriesFinder, DicomFinder, Volumizer
 
 
@@ -28,11 +28,11 @@ class ScannerInterface(object):
         """
         # Keep two different FTP clients for the series and
         # volume queues so they don't interfere with each other
-        client1 = ScannerClient(*args, **kwargs)
-        client2 = ScannerClient(*args, **kwargs)
+        client1 = ScannerSFTPClient(*args, **kwargs)
+        client2 = ScannerSFTPClient(*args, **kwargs)
 
         # Set an attribute so we know if we could connect
-        self.has_ftp_connection = client1.ftp is not None
+        self.has_ftp_connection = client1.sftp is not None
 
         # Initialize the queue objects
         series_q = Queue()
@@ -40,11 +40,13 @@ class ScannerInterface(object):
         volume_q = Queue()
 
         # Initialize the queue manager threads
-        self.series_finder = SeriesFinder(client1, series_q)
-        self.dicom_finder = DicomFinder(client2, series_q, dicom_q)
-        self.volumizer = Volumizer(dicom_q, volume_q)
+        self.series_finder = SeriesFinder(client1, series_q, interval=1)
+        self.dicom_finder = DicomFinder(client2, series_q, dicom_q, interval=0)
+        self.volumizer = Volumizer(dicom_q, volume_q, interval=0)
 
+        #Track if we've started to avoid joining unstarted threads
         self.alive = False
+
 
     def start(self):
         """Start the constituent threads."""
@@ -60,13 +62,13 @@ class ScannerInterface(object):
     def shutdown(self):
         """Halt and join the threads so we can exit cleanly."""
         if self.alive:
-            self.dicom_finder.halt()
-            self.series_finder.halt()
             self.volumizer.halt()
+            self.series_finder.halt()
+            self.dicom_finder.halt()
 
+            self.volumizer.join()
             self.series_finder.join()
             self.dicom_finder.join()
-            self.volumizer.join()
 
             self.alive = False
 
