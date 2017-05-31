@@ -3,6 +3,7 @@ asn1crypto==0.22.0
 cffi==1.10.0
 cryptography==1.9
 cycler==0.10.0
+dcmstack==0.7.0.dev0
 dicom==0.9.9.post1
 enum34==1.1.6
 functools32==3.2.3.post2
@@ -29,6 +30,7 @@ python-dateutil==2.6.0
 pytz==2017.2
 scikit-learn==0.18.1
 scipy==0.19.0
+sftpserver==0.3
 six==1.10.0
 sklearn==0.0
 subprocess32==3.2.7
