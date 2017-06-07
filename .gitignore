@@ -41,6 +41,16 @@ nick_test_data
 nick_test_subject
 venv
 
+
 threads.py
 rtfmri/tests/cue_test.py
 
+doit.py
+doit.py.lprof
+nick_dicom_structure.txt
+profiler.py.lprof
+rtfmri/assemble_volume profile
+rtfmri/dcmstack_add_dcm profile
+scanner_setup.sh
+test_scanner.py
+testingenv/

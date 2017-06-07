@@ -2,21 +2,29 @@
 from __future__ import print_function, division
 
 import time
+import pdb
 from threading import Thread, Event
 from Queue import Empty
 import logging
 
 import numpy as np
 from dcmstack import DicomStack
+from dcmstack.extract import default_extractor
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logging.basicConfig(format='%(asctime)s %(message)s')
 
 
-def time_it(tic, message):
-    toc = time.time()
-    #logger.debug(message + " {}".format(tic-toc))
+# def time_it(tic, message):
+#     toc = time.time()
+#     logger.debug(message + " {}".format(tic-toc))
+#     return toc-tic
+
+# def time_it2(tic, message):
+#     toc = time.time()
+#     logger.info(message + " {}".format(tic-toc))
+#     return toc-tic
 
 class Finder(Thread):
     """Base class that uses a slightly different approach to thread control."""
@@ -65,7 +73,7 @@ class SeriesFinder(Finder):
                 logger.debug("Series Finder: Starting series collection")
 
                 # Load up all series for the current exam
-                time_it(tic, "Series Finder: Grabbed a series")
+                # time_it(tic, "Series Finder: Grabbed a series")
                 for series in self.client.series_dirs():
 
                     logger.debug("Checking series {}".format(series))
@@ -84,7 +92,7 @@ class SeriesFinder(Finder):
                 latest_series = self.client.latest_series
 
                 if self.current_series != latest_series:
-                    time_it(tic, "Grabbed a NEW series")
+                    # time_it(tic, "Grabbed a NEW series")
                     logger.debug("Found new series: {}".format(series))
 
                     # Update what we think the current series is
@@ -138,7 +146,7 @@ class DicomFinder(Finder):
         # quite a bit faster than they would be with lists.
         self.dicom_files = set()
         self.nqueued = 0
-
+    #@profile
     def run(self):
         """This function gets looped over repeatedly while thread is alive."""
         while not self.stopped():
@@ -147,7 +155,7 @@ class DicomFinder(Finder):
 
                 # Find all the dicom files in this series
                 series_files = self.client.series_files(self.current_series)
-                time_it(tic, "DicomSeries: Grabbed the series dicoms ")
+                # time_it(tic, "DicomSeries: Grabbed the series dicoms ")
                 tic = time.time()
                 # Compare against the set of files we've already placed
                 # in the queue, keep only the new ones
@@ -163,7 +171,7 @@ class DicomFinder(Finder):
                 for fname in new_files:
                     self.dicom_q.put_nowait(self.client.retrieve_dicom(fname))
                     self.nqueued += 1
-                    time_it(tic, "Dicom series: Retrieved a dicom ")
+                    # time_it(tic, "Dicom series: Retrieved a dicom ")
                     tic = time.time()
 
                 # Update the set of files on the queue
@@ -202,6 +210,7 @@ class Volumizer(Finder):
         self.nqueued = 0
         self.n_gotten = 0
 
+
     def dicom_esa(self, dcm):
         """Extract the exam, series, and acquisition metadata.
 
@@ -214,13 +223,49 @@ class Volumizer(Finder):
 
         return exam, series, acquisition
 
+    def _get_meta(self, dcm, meta):
+        """
+        Given the slices dicoms meta data, get the rest of meta data
+        from the dicoms for the parameters that differ across slices.
+        This should signifantly speed up call times to add_dcm
+        """
+        meta = dict(meta)
+
+        meta['SOPInstanceUID'] = dcm[(0x0008, 0x0018)].value
+        meta['AcquisitionTime'] = dcm[(0x0008, 0x0032)].value
+        meta['ContentTime'] = dcm[(0x0008, 0x0033)].value
+        meta['InstanceNumber'] = dcm[(0x0020, 0x0013)].value
+        meta['ImagePositionPatient'] = dcm[(0x0020, 0x0032)].value
+        meta['SliceLocation'] = dcm[(0x0020, 0x1041)].value
+        meta['InStackPositionNumber'] = dcm[(0x0020, 0x9057)].value
+        meta['LargestImagePixelValue'] = dcm[(0x0028, 0x0107)].value
+        meta['WindowCenter'] = dcm[(0x0028, 0x1050)].value
+        meta['WindowWidth'] = dcm[(0x0028, 0x1051)].value
+        meta['TriggerTime'] = dcm[(0x0018, 0x1060)].value
+        try:
+            meta['GroupLength_0X18_0X0'] = dcm[(0x0018, 0x0000)].value
+        except KeyError:
+            pass
+        return meta
+
+    #@profile
     def assemble_volume(self, slices):
         """Put each dicom slice together into a nibabel nifti image object."""
         # Build a DicomStack from each of the slices
         tic = time.time()
+
+        meta = default_extractor(slices[0])
+        # m2 = default_extractor(slices[1])
+        # for key in meta:
+        #     if meta[key] != m2[key]:
+        #         print(key)
+        # print(slices[0])
+        # pdb.set_trace()
         stack = DicomStack()
         for f in slices:
-            stack.add_dcm(f)
+            #this takes 99% of time in this function.
+            new_meta = self._get_meta(f, meta)
+            stack.add_dcm(f, new_meta)
 
         # Convert into a Nibabel Nifti object
         nii_img = stack.to_nifti(voxel_order="")
@@ -238,12 +283,13 @@ class Volumizer(Finder):
             ntp=float(dcm.NumberOfTemporalPositions),
             image=nii_img,
             )
-        time_it(tic, "Assembled a volume")
+        # time_it2(tic, "Assembled a volume")
         return volume
 
     def missing_slices(self, need, have):
         return set(list(need)) - set(list(have))
 
+    # @profile
     def run(self):
         """This function gets looped over repetedly while thread is alive."""
         # Initialize the list we'll using to track progress
@@ -257,8 +303,8 @@ class Volumizer(Finder):
             tic = time.time()
 
             try:
-                dcm = self.dicom_q.get(timeout=1)
-                time_it(tic, "grabbed a dicom in volumizer:")
+                dcm = self.dicom_q.get(timeout=self.interval)
+                # time_it(tic, "grabbed a dicom in volumizer:")
                 self.n_gotten += 1
             except Empty:
                 # condition where dicom queue is empty but we
@@ -325,12 +371,13 @@ class Volumizer(Finder):
                 logger.debug(("Assembling full volume for slices {:d}-{:d}"
                               .format(min(instance_numbers_needed),
                                       max(instance_numbers_needed))))
+                tic = time.time()
                 volume = self.assemble_volume(volume_slices)
 
                 # Put that object on the dicom queue
                 self.volume_q.put_nowait(volume)
                 self.nqueued += 1
-                time_it(last_assembled, "Volumizer: Added a volume")
+                # time_it(last_assembled, "Volumizer: Added a volume")
                 last_assembled = time.time()
 
                 # Update the array of slices we need for the next volume

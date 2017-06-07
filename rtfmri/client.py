@@ -247,7 +247,7 @@ class ScannerSFTPClient(ScannerClient):
     """The same as scanner client, but with some modifications to use SFTP"""
     def __init__(self, *args, **kwargs):
         super(ScannerSFTPClient, self).__init__(*args, **kwargs)
-
+        self.pkey = None
 
     def get_key(self):
         # get host key, if we know one - taken from
@@ -287,19 +287,17 @@ class ScannerSFTPClient(ScannerClient):
         # TODO add a way to set this.
         self.set_pkey("test.key")
         self.transport = paramiko.Transport((self.hostname, self.port))
-
         if self.pkey:
             self.transport.connect(pkey=self.pkey)
         else:
             self.transport.connect(self.hostkey, self.username, self.password,
                                gss_host=socket.getfqdn(self.hostname),
                                gss_auth=UseGSSAPI,
-                               gss_kex=DoGSSAPIKeyExchange,
-                               pkey = pkey)
+                               gss_kex=DoGSSAPIKeyExchange)
 
-        self.transport.window_size = 2147483647
+        #self.transport.window_size = 2147483647
         self.transport.packetizer.REKEY_BYTES = pow(2, 40)
-        self.transport.packetizer.REKEY_PACKETS = pow(2, 40)
+        #self.transport.packetizer.REKEY_PACKETS = pow(2, 40)
 
         self.sftp = paramiko.SFTPClient.from_transport(self.transport)
 

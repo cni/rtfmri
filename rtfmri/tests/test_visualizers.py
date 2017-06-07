@@ -17,9 +17,12 @@ from ..visualizers import *
 class TestVisualizer(object):
 
     def __init__(self):
-        self.interface = ScannerInterface('localhost',
-                                          2121,
-                                          base_dir='nick_test_data')
+        self.interface = ScannerInterface(hostname='localhost',
+                                          port=2124,
+                                          base_dir='nick_test_data',
+                                          password='test.pass',
+                                          private_key='test.key',
+                                          public_key='CSR.csr')
 
     def test_control(self):
 
@@ -73,7 +76,7 @@ class TestRoiVisualizer(TestVisualizer):
     def setup_class(cls):
 
         cls.host = "localhost"
-        cls.port = 2121
+        cls.port = 2124
         cls.base_dir = "nick_test_data"
 
         # Pass the default credentials to connect to the test FTP server
@@ -122,9 +125,12 @@ class TestGraphVisualizer(object):
         cls.base_dir = "nick_test_data"
 
         # Pass the default credentials to connect to the test FTP server
-        cls.interface = ScannerInterface(hostname=cls.host,
-                                         port=cls.port,
-                                         base_dir=cls.base_dir)
+        cls.interface = ScannerInterface(hostname='localhost',
+                                         port=2124,
+                                         base_dir='nick_test_data',
+                                         password='test.pass',
+                                         private_key='test.key',
+                                         public_key='CSR.csr')
 
         cls.masker = Masker('nick_test_subject/naccf_pos.nii')
 
@@ -151,10 +157,12 @@ class TestThermometer(object):
         cls.base_dir = "nick_test_data"
 
         # Pass the default credentials to connect to the test FTP server
-        cls.interface = ScannerInterface(hostname=cls.host,
-                                         port=cls.port,
-                                         base_dir=cls.base_dir)
-
+        cls.interface = ScannerInterface(hostname='localhost',
+                                         port=2124,
+                                         base_dir='nick_test_data',
+                                         password='test.pass',
+                                         private_key='test.key',
+                                         public_key='CSR.csr')
         cls.masker = Masker('nick_test_subject/naccf_pos.nii')
 
     @classmethod

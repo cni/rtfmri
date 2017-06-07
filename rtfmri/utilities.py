@@ -1,7 +1,7 @@
 """Utilities for starting a scan and collecting pulse timings."""
 
 import serial
-import sys, signal, time
+import sys, signal, time, os
 from datetime import datetime
 
 def _get_device(user_os):
@@ -32,14 +32,7 @@ def start_scan(user_os='linux'):
 ### BELOW is the code for gathering pulse timings, which should be
 ### Useful for precise timing information.
 
-# import serial
-# import sys, signal, time
-# from datetime import datetime
-
-# # Be sure to set this to the correct device! Under linux, it is something
-# # like /dev/ttyACM0. On OSX, it will be /dev/ttyUSBNNNN, where NNNN is
-# # some cryptic number. On windows, it will be a COM port (e.g., COM4).
-# device = '/dev/ttyACM0'
+# device = _get_device()
 
 # running = True
 

@@ -2,8 +2,9 @@
 
 import sys, os, time
 import signal
+import socket
 from Queue import Queue
-from client import ScannerClient, ScannerSFTPClient
+from clients import SFTPClient
 from queuemanagers import SeriesFinder, DicomFinder, Volumizer
 
 
@@ -28,11 +29,98 @@ class ScannerInterface(object):
         """
         # Keep two different FTP clients for the series and
         # volume queues so they don't interfere with each other
-        client1 = ScannerSFTPClient(*args, **kwargs)
-        client2 = ScannerSFTPClient(*args, **kwargs)
+
+        #Track if we've started to avoid joining unstarted threads
+        self.alive = False
+
+        try:
+            client1 = SFTPClient(*args, **kwargs)
+            client2 = SFTPClient(*args, **kwargs)
+            try:
+                print(client1.latest_exam)
+                print(client2.latest_exam)
+                self.sftp_success = True
+            except Error:
+                self.sftp_success = False
+                raise(socket.error,"SFTP failed to check dir...")
+
+        except Exception as e:
+            print(e)
+            raise(socket.error, "Login failed")
+
+        print("SUCCESS!")
 
         # Set an attribute so we know if we could connect
-        self.has_ftp_connection = client1.sftp is not None
+        #
+
+        # Initialize the queue objects
+        series_q = Queue()
+        dicom_q = Queue()
+        volume_q = Queue()
+
+        # Initialize the queue manager threads
+        self.series_finder = SeriesFinder(client1, series_q, interval=1)
+        self.dicom_finder = DicomFinder(client2, series_q, dicom_q, interval=0.001)
+        self.volumizer = Volumizer(dicom_q, volume_q, interval=0.001)
+
+
+
+
+    def start(self):
+        """Start the constituent threads."""
+        self.alive = True
+        self.series_finder.start()
+        self.dicom_finder.start()
+        self.volumizer.start()
+        print("Started...")
+
+    def get_volume(self, *args, **kwargs):
+        """Semantic wrapper for pulling a volume off the volume queue."""
+        return self.volumizer.volume_q.get(*args, **kwargs)
+
+    def shutdown(self):
+        """Halt and join the threads so we can exit cleanly."""
+        if self.alive:
+            self.volumizer.halt()
+            self.series_finder.halt()
+            self.dicom_finder.halt()
+
+            self.volumizer.join()
+            self.series_finder.join()
+            self.dicom_finder.join()
+
+            self.alive = False
+
+    def __del__(self):
+
+        self.shutdown()
+
+class ScannerFTPInterface(object):
+    """Interface for getting real-time data off the scanner.
+
+    There are a number of moving parts involved in talking to the
+    scanner and getting useful data (in the form of nibabel image
+    objects with metadata for each timeseries volume.
+
+    This groups the various pieces into one object that's easy to
+    interface with.
+
+    """
+
+    def __init__(self, *args, **kwargs):
+        """Initialize the interface object.
+
+        The positional and keyword arguments are passed through
+        to the underlying scanner client objects.
+
+        """
+        # Keep two different FTP clients for the series and
+        # volume queues so they don't interfere with each other
+        client1 = SFTPClient(*args, **kwargs)
+        client2 = SFTPClient(*args, **kwargs)
+
+        # Set an attribute so we know if we could connect
+        self.has_ftp_connection = client1.ftp is not None
 
         # Initialize the queue objects
         series_q = Queue()
@@ -75,6 +163,8 @@ class ScannerInterface(object):
     def __del__(self):
 
         self.shutdown()
+
+
 
 
 

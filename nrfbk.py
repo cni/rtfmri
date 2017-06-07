@@ -28,7 +28,7 @@ if __name__ == '__main__':
     base_dir="/export/home1/sdc_image_pool/images"
 
     host = "localhost"
-    port = 2121
+    port = 2124
     base_dir = "nick_test_data"
 
     # Pass the default credentials to connect to the test FTP server
