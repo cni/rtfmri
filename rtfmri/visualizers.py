@@ -80,6 +80,8 @@ class RoiVisualizer(Visualizer):
         self.masker = masker
         # keep track of the ROI's information over time.
         self.roi_tc = []
+        self.nvol = 0
+        self.TR = 2
 
     def start_timer(self):
         self.start = time.time()
@@ -90,14 +92,19 @@ class RoiVisualizer(Visualizer):
         toc = time.time()
         start_diff = toc - self.start
         last_diff  = toc - self.last_time
+        volume_collected = self.start + self.nvol * self.TR - 2
+        lag = toc - volume_collected
+
         self.last_time = toc
         print("Time since start: {}".format(start_diff ))
         print("Time since last: {}".format(last_diff))
         print("Average since start: {}".format(start_diff/n))
+        print("Lag: {}".format(lag))
 
     def update_state(self):
         logger.debug("Fetching volume...")
         vol = self.get_volume()
+        self.nvol += 1
         roi_mean = self.masker.reduce_volume(vol)
         self.roi_tc.append(roi_mean)
         self.state = roi_mean

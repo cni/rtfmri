@@ -5,10 +5,10 @@ backports.shutil-get-terminal-size==1.0.0
 cffi==1.10.0
 cryptography==1.9
 cycler==0.10.0
-dcmstack==0.7.0.dev0
+#dcmstack==0.7.0.dev0
 decorator==4.0.11
 enum34==1.1.6
-functools32==3.2.3.post2
+#functools32==3.2.3.post2
 idna==2.5
 ipaddress==1.0.18
 ipython==5.4.0

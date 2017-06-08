@@ -1,8 +1,22 @@
 """Utilities for starting a scan and collecting pulse timings."""
 
+import re
 import serial
 import sys, signal, time, os
 from datetime import datetime
+
+def alphanum_key(entry, only_digits=False):
+    converted_parts = []
+    fname = entry.split()[-1]
+    parts = re.split("([0-9]+)", fname)
+    for part in parts:
+        if part.isdigit():
+            converted_parts.append(int(part))
+        else:
+            if not only_digits:
+                converted_parts.append(part)
+    return converted_parts
+
 
 def _get_device(user_os):
     if user_os == 'mac':

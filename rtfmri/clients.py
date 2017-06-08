@@ -1,10 +1,3 @@
-#!/usr/bin/env python
-#
-# pylibssh2 - python bindings for libssh2 library
-# adapted from
-# https://github.com/wallix/pylibssh2/blob/master/examples/sftp_listdir.py
-
-
 import re
 import socket
 import sys
@@ -16,6 +9,8 @@ from datetime import datetime
 
 import libssh2
 import pydicom
+
+from utilities import alphanum_key
 
 # usage = """Do a SFTP file listing of <directory> with username@hostname
 # Usage: %s <hostname> <username> <password> <directory>""" %
@@ -55,16 +50,6 @@ class BaseClient(object):
         that means the files are not in sequential order. Fix that here.
 
         """
-        def alphanum_key(entry):
-            converted_parts = []
-            fname = entry.split()[-1]
-            parts = re.split("([0-9]+)", fname)
-            for part in parts:
-                if part.isdigit():
-                    converted_parts.append(int(part))
-                else:
-                    converted_parts.append(part)
-            return converted_parts
 
         file_list.sort(key=alphanum_key)
 
@@ -341,7 +326,7 @@ class SFTPClient(BaseClient):
 
     def retrieve_file(self, filename):
         """Return a file as a buffer."""
-        print filename
+        #print filename
         buf = cStringIO.StringIO()
         handle = self.sftp.open(filename, 'r', self.max_buf_size)
         while True:

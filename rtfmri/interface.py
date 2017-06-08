@@ -64,6 +64,9 @@ class ScannerInterface(object):
         self.volumizer = Volumizer(dicom_q, volume_q, interval=0.001)
 
 
+    def set_dicom_filter(self, dcmf):
+        self.dicom_finder.set_dicom_filter(dcmf)
+        self.volumizer.set_dicom_filter(dcmf)
 
 
     def start(self):
