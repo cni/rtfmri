@@ -2,10 +2,14 @@
 
 import time
 import os
-
+from threading import Lock
 from collections import OrderedDict
 from numpy import mean as npm
 from nilearn.input_data import NiftiMasker
+from scipy.ndimage import measurements, interpolation
+import nibabel
+import numpy as np
+
 
 from utilities import alphanum_key
 import pdb
@@ -14,12 +18,14 @@ class Masker(object):
         self.mask_img = mask_img
         self.masker = NiftiMasker(mask_img=mask_img)
         self.fit = False
-
         #set the mask center
         if center is None:
-            self.find_center()
+            self.center = self.find_center()
+
         else:
             self.center = center
+            print("Center=",center)
+            print("COM calc=",self.find_center())
 
         # the radius of the mask, used for determining what data to read.
         self.radius = radius
@@ -32,9 +38,15 @@ class Masker(object):
         return reduced
 
     def find_center(self):
-        pass
-        self.center = 16
+        #something like
+        com = measurements.center_of_mass(nibabel.load(self.masker.mask_img).get_data())
+        affine = nibabel.load(self.masker.mask_img).affine
+        offset=affine[0:3,3]
+        tcom = np.dot(affine[0:3,0:3], com) + offset
+        return tcom[2]
 
+
+        #interpolation.affine_transform(com, n)
 
 class DicomFilter(object):
     """
@@ -44,7 +56,7 @@ class DicomFilter(object):
     """
     def __init__(self, masker):
 
-        #self.lock = Lock()
+        self.lock = Lock()
         #require lock
 
         self.first_dicom = None
@@ -99,8 +111,11 @@ class DicomFilter(object):
             If we have a full volume, we can now determine which volumes
             contain information near our ROI
             """
+            # first sort everything by instance number:
+            pairs = zip(self.instance_numbers, self.locations)
+
             legal_indices = [x[0] for x in
-                             sorted(enumerate(self.locations))
+                             sorted(pairs, key=lambda tup: tup[1])
                              if abs(x[1] - self.mask_center) < self.radius + 4
             ]
             print("DETERMINED INDICES: \n\n\n\n\n")
@@ -114,8 +129,14 @@ class DicomFilter(object):
         last two integer components of the name. (More than that is overkill.)
         """
         parts = alphanum_key(fname, only_digits=True)
+
         #reduced first name begins as zero, so we can use this to set it
+        # this works on .dcm files sorted by name, but not on teh scanner
         reduced = (parts[-2] * 1000 + parts[-1]) - self.reduced_first_name
+
+        #instead, on the scanner we use the raw instance number:
+        reduced = parts[-1]
+
         #print(reduced)
         return int(reduced)
 
@@ -134,23 +155,22 @@ class DicomFilter(object):
         if not self.ready:
             raise(ValueError,"Cannot filter without a legal list.")
 
+
         #first take just the filenames. say we start with 1040...1079
         rn = [os.path.split(x)[-1] for x in paths]
 
         # reduce to (0,40) ..(39,79) for sorting
-        rn = [(x[0], self.reduce_name(x[1])+1)
-              for x in enumerate(rn)
-        ]
-        # reduce to (0, 0)... (39,39) for filtering
-        rn = [(x[0], x[1] % self.slices_per_volume) for x in rn ]
-        #print(rn)
+        rn = [(x[0], self.reduce_name(x[1])) for x in enumerate(rn) ]
+
+        # reduce to (0, 1)... (39,39) for filtering
+        rn = [(x[0], 1 + ((x[1] - 1) % self.slices_per_volume)) for x in rn ]
+
 
         #now remove all illegal ones
         rn = [x for x in rn if x[1] in self.legal_indices]
 
-        #now return filtered paths
-        filtered = [paths[x[0]] for x in rn]
 
+        filtered = [paths[x[0]] for x in rn]
         ordered_set = OrderedDict()
         for x in filtered:
             ordered_set[x] = True

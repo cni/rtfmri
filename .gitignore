@@ -54,3 +54,4 @@ rtfmri/dcmstack_add_dcm profile
 #scanner_setup.sh
 $test_scanner.py
 testingenv/
+phantom

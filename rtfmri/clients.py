@@ -222,10 +222,12 @@ class FTPClient(BaseClient):
 class SFTPClient(BaseClient):
 
     def __init__(self, hostname='localhost', username='', password=None,
-                 port=2124, base_dir='.', private_key=None, public_key=None):
+                 port=2124, base_dir='.', private_key=None, public_key=None,
+                 mutex = None):
         self.public_key = public_key
         self.private_key = private_key
         self.max_buf_size = pow(2, 30)  # 30 is max
+        self.mutex = mutex
 
         super(SFTPClient, self).__init__(hostname=hostname, username=username,
                                          password=password, port=port,
@@ -234,7 +236,9 @@ class SFTPClient(BaseClient):
     def connect(self):
 
         try:
+            if self.mutex is not None: self.mutex.acquire()
             self._prepare_sock()
+            if self.mutex is not None: self.mutex.release()
             #print("Connected!")
         except socket.error:
             # Connection refused
@@ -273,6 +277,8 @@ class SFTPClient(BaseClient):
 
     def list_dir(self, remote_path='.', sort='alpha'):
         """Return a dictionary for contents in a directory."""
+        if self.mutex is not None:
+            self.mutex.acquire()
         handle = self.sftp.opendir(remote_path)
         if handle:
             files = []
@@ -289,6 +295,8 @@ class SFTPClient(BaseClient):
                 })
 
         self.sftp.close(handle)
+        if self.mutex is not None:
+            self.mutex.release()
         return self._parse_dir_output(files, sort=sort)
 
     def _parse_dir_output(self, file_list, sort='alpha'):
@@ -327,6 +335,8 @@ class SFTPClient(BaseClient):
     def retrieve_file(self, filename):
         """Return a file as a buffer."""
         #print filename
+        if self.mutex is not None:
+            self.mutex.acquire()
         buf = cStringIO.StringIO()
         handle = self.sftp.open(filename, 'r', self.max_buf_size)
         while True:
@@ -336,6 +346,9 @@ class SFTPClient(BaseClient):
             buf.write(data)
         buf.seek(0)
         self.sftp.close(handle)
+
+        if self.mutex is not None:
+            self.mutex.release()
         return buf
 
     def reconnect(self):

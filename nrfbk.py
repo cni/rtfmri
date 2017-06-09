@@ -29,7 +29,7 @@ if __name__ == '__main__':
 
     host = "localhost"
     port = 2124
-    base_dir = "nick_test_data"
+    base_dir = "phantom"
 
 
 
@@ -46,7 +46,10 @@ if __name__ == '__main__':
                                  base_dir=base_dir)
 
     # Create the masking object and DicomFilter
-    masker = Masker('nick_test_subject/naccf_pos.nii')
+    mask_center = 16 # this is the z coord of our roi (IS)
+    mask_radius = 16
+    masker = Masker('nick_test_subject/naccf_pos.nii', center=mask_center,
+                    radius=mask_radius)
     dcm_filter = DicomFilter(masker)
     interface.set_dicom_filter(dcm_filter)
 

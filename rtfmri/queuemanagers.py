@@ -89,7 +89,7 @@ class SeriesFinder(Finder):
                     if latest_info["NumTimepoints"] > 6:
                         logger.debug(("Series appears to be 4D; "
                                       "adding to series queue"))
-                        self.queue.put_nowait(series)
+                        self.queue.put(series, timeout = self.interval)
                         self.nqueued += 1
 
                 self.current_series = series
@@ -112,7 +112,7 @@ class SeriesFinder(Finder):
                     if latest_info["NumTimepoints"] > 1:
                         logger.debug(("Series appears to be 4D; "
                                       "adding to series queue"))
-                        self.queue.put_nowait(latest_series)
+                        self.queue.put(latest_series, timeout = self.interval)
                         self.nqueued += 1
 
             time.sleep(self.interval)
@@ -191,28 +191,29 @@ class DicomFinder(Finder):
                     if fname not in filtered_files:
                         continue
 
-
+                    print(fname)
                     dcm = self.client.retrieve_dicom(fname)
 
                     if self.dicom_filter is not None and not self.dicom_filter.ready:
                         # then we're collecting first volume
                         volume_number = int(dcm[(0x0020, 0x0100)].value)
                         if volume_number==1:
-                            self.dicom_filter.update({
-                                'name' : fname,
-                                'trigger_time': dcm[(0x0018, 0x1060)].value,
-                                'slices_per_volume' : dcm[(0x0021, 0x104f)].value,
-                                'instance_number': dcm[(0x0020, 0x0013)].value,
-                                'location' : dcm[(0x0020, 0x1041)].value,
-                                'volume_number' : volume_number
-                            })
+                            with self.dicom_filter.lock:
+                                self.dicom_filter.update({
+                                    'name' : fname,
+                                    'trigger_time': dcm[(0x0018, 0x1060)].value,
+                                    'slices_per_volume' : dcm[(0x0021, 0x104f)].value,
+                                    'instance_number': dcm[(0x0020, 0x0013)].value,
+                                    'location' : dcm[(0x0020, 0x1041)].value,
+                                    'volume_number' : volume_number
+                                })
 
                         if self.dicom_filter.ready:
                             print ("WE KNOW LEGALS!!!!\n\n\n\n")
                             filtered_files = self.dicom_filter.filter(new_files)
                             #print(filtered_files)
 
-                    self.dicom_q.put_nowait(dcm)
+                    self.dicom_q.put(dcm, timeout = self.interval)
                     self.nqueued += 1
                     time_it(tic, "Dicom series: Retrieved a dicom ")
                     tic = time.time()
@@ -294,7 +295,7 @@ class Volumizer(Finder):
         # acquisition_num = [(0x0020, 0x0012)].value
         stack_id = dcm[(0x0020, 0x9056)].value
         tpid = dcm[(0x0020, 0x0100)].value
-        #print(meta['InstanceNumber'],tpid, meta['InStackPositionNumber'], meta['TriggerTime'], meta['SliceLocation'], meta['ContentTime'])
+        #print(meta['InstanceNumber'],tpid, meta['InStackPositionNumber'], meta['TriggerTime'], meta['SliceLocation'], meta['ContentTime'], meta['SOPInstanceUID'])
         try:
             meta['GroupLength_0X18_0X0'] = dcm[(0x0018, 0x0000)].value
             #print('GroupLength_0X18_0X0')
@@ -354,6 +355,7 @@ class Volumizer(Finder):
 
         last_assembled = time.time()
         trigger_times_acquired = []
+        self.filtered = False
         while not self.stopped():
             tic = time.time()
 
@@ -419,12 +421,15 @@ class Volumizer(Finder):
             #logger.debug(("Missing slices: {}\n"), ''.join(instance_numbers_gathered))
             current_slices.append(dcm)
 
-            if self.dicom_filter is not None and self.dicom_filter.ready:
-                instance_numbers_needed = [
-                    x for x in instance_numbers_needed
-                    if x % slices_per_volume in self.dicom_filter.legal_indices
-                ]
-                instance_numbers_needed = np.array(instance_numbers_needed)
+            if self.dicom_filter is not None and not self.filtered:
+                if self.dicom_filter.ready:
+                    instance_numbers_needed = [
+                        x for x in instance_numbers_needed
+                        if x % slices_per_volume in self.dicom_filter.legal_indices
+                    ]
+                    instance_numbers_needed = np.array(instance_numbers_needed)
+                    self.filtered = True
+
                 #print("INSTANCE NUMBERS:",instance_numbers_needed)
                 #print(instance_numbers_needed, instance_numbers_gathered)
             #print("Missing:",set(list(instance_numbers_needed)) - set(list(instance_numbers_gathered)))
@@ -471,7 +476,7 @@ class Volumizer(Finder):
                 volume = self.assemble_volume(volume_slices)
 
                 # Put that object on the dicom queue
-                self.volume_q.put_nowait(volume)
+                self.volume_q.put(volume, timeout = self.interval)
                 self.nqueued += 1
                 time_it(last_assembled, "Volumizer: Added a volume")
                 last_assembled = time.time()

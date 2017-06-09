@@ -4,6 +4,8 @@ import sys, os, time
 import signal
 import socket
 from Queue import Queue
+from threading import Lock
+
 from clients import SFTPClient
 from queuemanagers import SeriesFinder, DicomFinder, Volumizer
 
@@ -20,7 +22,8 @@ class ScannerInterface(object):
 
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, hostname='localhost', username='', password=None,
+                 port=2124, base_dir='.', private_key=None, public_key=None):
         """Initialize the interface object.
 
         The positional and keyword arguments are passed through
@@ -33,9 +36,18 @@ class ScannerInterface(object):
         #Track if we've started to avoid joining unstarted threads
         self.alive = False
 
+        self.mutex = Lock()
+
         try:
-            client1 = SFTPClient(*args, **kwargs)
-            client2 = SFTPClient(*args, **kwargs)
+            client1 = SFTPClient(hostname=hostname, username=username,
+                                 password=password, port=port,
+                                 base_dir=base_dir, private_key=private_key,
+                                 public_key=public_key, mutex = self.mutex)
+
+            client2 = SFTPClient(hostname=hostname, username=username,
+                                 password=password, port=port,
+                                 base_dir=base_dir, private_key=private_key,
+                                 public_key=public_key, mutex = self.mutex)
             try:
                 print(client1.latest_exam)
                 print(client2.latest_exam)
