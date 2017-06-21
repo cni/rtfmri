@@ -19,28 +19,28 @@ class TestScannerClient(object):
     def setup_class(cls):
 
         cls.host = "localhost"
-        cls.port = 2121
+        cls.port = 2124
         cls.base_dir = "test_data"
 
         # Pass the default credentials to connect to the test FTP server
         cls.client = client.ScannerClient(hostname=cls.host,
                                           port=cls.port,
                                           base_dir=cls.base_dir)
-        cls.no_server = cls.client.ftp is None
+        cls.no_server = cls.client.sftp is None
 
     @classmethod
     def teardown_class(cls):
 
-        if cls.client.ftp is not None:
+        if cls.client.sftp is not None:
             cls.client.close()
 
-    def test_ftp_connection(self):
+    def test_sftp_connection(self):
 
         if self.no_server:
             raise SkipTest
 
-        nt.assert_equal(self.client.ftp.host, self.host)
-        nt.assert_equal(self.client.ftp.port, self.port)
+        nt.assert_equal(self.client.hostname, self.host)
+        nt.assert_equal(self.client.port, self.port)
 
     def test_list_dir(self):
 
@@ -51,7 +51,7 @@ class TestScannerClient(object):
         contents = self.client.list_dir(self.client.base_dir)
 
         nt.assert_equal(len(contents), 1)
-        _, _, name = contents[0]
+        name = contents[0]
         nt.assert_equal(name, "p004")
 
     def test_alphanum_sort(self):
@@ -77,39 +77,72 @@ class TestScannerClient(object):
         self.client._alphanumeric_sort(test_list)
         nt.assert_equal(test_list, want_list)
 
-    def test_parse_dir_output(self):
-
-        test_list = [
-            "drwx------   3 mwaskom  staff   102 May 26 12:39 Applications",
-            "drwx------+  9 mwaskom  staff   306 Nov  7  2013 Desktop",
-            "drwx------+  3 mwaskom  staff   109 May 24 17:20 Documents",
-            "drwx------+ 34 mwaskom  staff  1156 Oct 26 11:19 Downloads"
+    def test_clean(self):
+        filenames = [
+            'MR.1.2.840.113619.2.283.4120.7575399.15401.1363019204.97.dcm',
+            'MR.1.2.840.113619.2.283.4120.7575399.15401.1363019204.98.dcm',
+            'MR.1.2.840.113619.2.283.4120.7575399.15401.1363019204.99.dcm',
+            '.files',
+            '.DS_Store',
+            'record.json',
+            'notes.txt',
+            '.',
+            '..'
         ]
 
-        parsed = self.client._parse_dir_output(test_list)
+        cleaned_filenames = [
+            'MR.1.2.840.113619.2.283.4120.7575399.15401.1363019204.97.dcm',
+            'MR.1.2.840.113619.2.283.4120.7575399.15401.1363019204.98.dcm',
+            'MR.1.2.840.113619.2.283.4120.7575399.15401.1363019204.99.dcm'
+        ]
 
-        # We expect the "Desktop" entry to get dropped
-        nt.assert_equal(len(parsed), 3)
+        nt.assert_equal(cleaned_filenames, self.client._clean(filenames))
 
-        # Pull out the first entry (the earliest item in the list)
-        entry = parsed[0]
-        timestamp, size, name = entry
 
-        # Build the timestamp we expect for the first entry
-        year = datetime.now().year
-        expected_time = "{} May 24 17:20:000003".format(year)
-        expected_timestamp = datetime.strptime(expected_time,
-                                               "%Y %b %d %H:%M:%f")
+    def test_parse_dir_output(self):
 
-        # Test the entries we got against what we want
-        nt.assert_equal(timestamp, expected_timestamp)
-        nt.assert_equal(size, 109)
-        nt.assert_equal(name, "Documents")
+        #construct a file list of dictionaries containing attributes
+        import os
+        import stat
 
-        # Test that the names are in the right order
-        ordered_names = ["Documents", "Applications", "Downloads"]
-        for (_, _, got_name), want_name in zip(parsed, ordered_names):
-            nt.assert_equal(got_name, want_name)
+        test_files = []
+
+        session_path = 'test_data/p004/e4120'
+        for f in os.listdir(session_path):
+            fpath = os.path.join(session_path, f)
+            stats = os.stat(fpath)
+            test_files.append({
+                'name': f,
+                'size': stats[stat.ST_SIZE],
+                'uid': stats[stat.ST_UID],
+                'gid': stats[stat.ST_GID],
+                'mode': stats[stat.ST_MODE],
+                'atime': stats[stat.ST_ATIME],
+                'mtime': stats[stat.ST_MTIME]
+            })
+
+        #sort them alphanumerically
+        file_names = [x['name'] for x in test_files]
+        self.client._alphanumeric_sort(file_names)
+        alpha_sorted = self.client._clean([x for x in file_names])
+
+
+        #sort them by mtime
+        test_files.sort(key=lambda x: x['mtime'])
+        mtime_sorted = self.client._clean([x['name'] for x in test_files])
+
+        alpha_parsed = self.client._parse_dir_output(test_files)
+        mtime_parsed = self.client._parse_dir_output(test_files, sort='mtime')
+
+        nt.assert_equal(alpha_parsed, alpha_sorted)
+        nt.assert_equal(mtime_parsed, mtime_sorted)
+
+        #we should get the same list when called with list_dir
+        alpha_listed = self.client.list_dir(session_path)
+        mtime_listed = self.client.list_dir(session_path, sort='mtime')
+
+        nt.assert_equal(alpha_listed, alpha_sorted)
+        nt.assert_equal(mtime_listed, mtime_sorted)
 
     def test_latest_entry(self):
 
@@ -132,7 +165,7 @@ class TestScannerClient(object):
             raise SkipTest
 
         nt.assert_equal(self.client.latest_series,
-                        "test_data/p004/e4120/4120_4_1_dicoms")
+                        "test_data/p004/e4120/4120_11_1_dicoms")
 
     def test_series_dirs(self):
 
@@ -144,7 +177,7 @@ class TestScannerClient(object):
         path_list = self.client.series_dirs(exam_dir)
 
         # File list and path list should match
-        for path, (_, _, name) in zip(path_list, file_list):
+        for path, name in zip(path_list, file_list):
             nt.assert_equal(path, op.join(exam_dir, name))
 
     def test_series_files(self):
@@ -157,7 +190,7 @@ class TestScannerClient(object):
         path_list = self.client.series_files(series_dir)
 
         # File list and path list should match
-        for path, (_, _, name) in zip(path_list, file_list):
+        for path, name in zip(path_list, file_list):
             nt.assert_equal(path, op.join(series_dir, name))
 
     def test_series_info(self):
@@ -185,7 +218,7 @@ class TestScannerClient(object):
             raise SkipTest
 
         series_dir = self.client.latest_series
-        _, _, name = self.client.list_dir(series_dir)[0]
+        name = self.client.list_dir(series_dir)[0]
         filename = op.join(series_dir, name)
 
         dcm1 = self.client.retrieve_dicom(filename)

@@ -1,157 +1,196 @@
-"""Contains class to interface with GE Scanner.
-
+"""
+Contains class to interface with a GE scanner
+via sftp to read directories and fetch dicoms.
 This is the lowest layer of the rtfmri machinery.
-
 """
 from __future__ import print_function
-import os.path as op
 import re
 import ftplib
 import socket
-from cStringIO import StringIO
+import sys
+import cStringIO
+import os.path as op
 from datetime import datetime
 
-import dicom
+import libssh2
+import pydicom
+
+from utilities import alphanum_key
 
 
 class ScannerClient(object):
-    """Client to interface with GE scanner in real-time."""
-    def __init__(self, hostname="cnimr", port=21,
+    """Client to interface via ssh protocol with GE scanner in realtime."""
+
+    def __init__(self, hostname="cnimr", port=22,
                  username="", password="",
                  base_dir="/export/home1/sdc_image_pool/images",
-                 ftp_debug_level=0):
-        """Inialize the client and connect to the FTP server.
-
-        """
+                 private_key=None, public_key=None, lock=None):
         self.hostname = hostname
-        self.port = port
         self.username = username
         self.password = password
+        self.port = port
         self.base_dir = base_dir
 
-        # Try to connect to the server, but catch errors
-        # so that we can test aspects of this class without
-        # an active FTP server
-        try:
-            self.connect()
-            self.ftp.set_debuglevel(ftp_debug_level)
-        except socket.error:
-            # Connection refused
-            self.ftp = None
-            print("Could not connect to FTP server.""")
+        self.public_key = public_key
+        self.private_key = private_key
+
+        # If using more than one SFTP client at a time, pass in a
+        # threading.Lock as your mutex in order to avoid problems with gcrypt.
+        self.lock = lock
+
+        # Set the maximum buffer size for reading files via sftp
+        self.max_buf_size = pow(2, 30)
+
+        self.connect()
 
     def connect(self):
-        """Connect to the FTP server."""
-        self.ftp = ftplib.FTP()
-        self.ftp.connect(host=self.hostname, port=self.port)
-        self.ftp.login(user=self.username, passwd=self.password)
 
-    def reconnect(self):
-        """Reinitialize FTP connection if it was dropped."""
         try:
-            self.ftp.voidcmd("NOOP")
-        except ftplib.error_temp:
-            # Connection has timed out, so reconnect
-            self.connect()
+            if self.lock is not None: self.lock.acquire()
+            self._prepare_sock()
+        except socket.error as e:
+            # Connection refused
+            self.sftp = None
+            raise(e)
 
-    def close(self):
-        """Close the connection to the FTP server (if it exists)."""
-        if self.ftp is not None:
-            self.ftp.close()
+        finally:
+            if self.lock is not None: self.lock.release()
 
     def __del__(self):
-        """Close the connection when the object is destroyed."""
         self.close()
 
-    def list_dir(self, dir):
-        """Return (timestamp, size, name) for contents in a directory."""
-        self.reconnect()
+    def _prepare_sock(self):
+        """This code modified from
+        https://github.com/wallix/pylibssh2/blob/master/examples/sftp_listdir.py
+        """
 
-        # Get an ls style list of items in `dir`
-        file_list = []
-        self.ftp.dir(dir, file_list.append)
+        try:
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.sock.connect((self.hostname, self.port))
+            self.sock.setblocking(1)
+        except Exception, e:
+            print("SockError: Can't connect socket to %s:%d" % (self.hostname, self.port))
+            print(e)
 
-        # Parse the output and return
-        return self._parse_dir_output(file_list)
+        try:
+            self.session = libssh2.Session()
+            self.session.set_banner()
+            self.session.startup(self.sock)
+
+            # Support for keys would go like so, currently not tested but
+            # included here because of poor documentation.
+            self.private_key = None
+            if self.private_key:
+                self.session.userauth_publickey_fromfile(self.username,
+                                                         self.public_key,
+                                                         self.private_key,
+                                                         self.password)
+            else:
+                self.session.userauth_password(self.username, self.password)
+        except Exception, e:
+            print("SSHError: Can't startup session")
+            print(e)
+
+        self.sftp = self.session._session.sftp_init()
+
+    def close(self):
+        """Close the connection to the SFTP server (if it exists)."""
+        if self.session is not None:
+            self.session.close()
+            self.sock.close()
+
+    def reconnect(self):
+        """Reinitialize SFTP connection if it was dropped."""
+        pass
+
+    def list_dir(self, remote_path='.', sort='alpha'):
+        """Return a list of files in a directory sorted
+        either alphanumerically if sort=='alpha' or based upon
+        one of the attributes we get from sftp listdir which we put
+        in a dictionary and pass to our parser.
+        """
+
+        if self.lock is not None:
+            self.lock.acquire()
+        try:
+            handle = self.sftp.opendir(remote_path)
+            if handle:
+                files = []
+                for file, attribute in self.sftp.listdir(handle):
+                    size, uid, gid, mode, atime, mtime = attribute
+                    files.append({
+                        'name': file,
+                        'size': size,
+                        'uid': uid,
+                        'gid': gid,
+                        'mode': mode,
+                        'atime': atime,
+                        'mtime': mtime
+                    })
+            self.sftp.close(handle)
+        finally:
+            if self.lock is not None:
+                self.lock.release()
+
+        return self._parse_dir_output(files, sort=sort)
+
+    def _parse_dir_output(self, file_list, sort='alpha'):
+        """list_dir gives us a list of dictionaries for file names + stats.
+           turn this into just the file names.
+        """
+
+        if sort == 'alpha':
+            # Sort the files alphanumerically
+            file_names = [x['name'] for x in file_list]
+            self._alphanumeric_sort(file_names)
+        else:
+            # Sort the files based on attribute 'sort', eg mtime or size
+            file_list.sort(key=lambda x: x[sort])
+            file_names = [x['name'] for x in file_list]
+
+        return self._clean(file_names)
 
     def _alphanumeric_sort(self, file_list):
-        """Sort the file list by name respecting numeric order.
-
-        DICOM filenames are numerically sequential, but not zero-padded.
-        The FTP server gives us a list of files in "sorted" order, but
-        that means the files are not in sequential order. Fix that here.
-
-        """
-        def alphanum_key(entry):
-            converted_parts = []
-            fname = entry.split()[-1]
-            parts = re.split("([0-9]+)", fname)
-            for part in parts:
-                if part.isdigit():
-                    converted_parts.append(int(part))
-                else:
-                    converted_parts.append(part)
-            return converted_parts
-
+        """Sort the file list by name respecting numeric order."""
         file_list.sort(key=alphanum_key)
 
-    def _parse_dir_output(self, file_list):
-        """Parse a UNIX-style ls output from the FTP server."""
-        # Sort the file list, respecting alphanumeric order
-        self._alphanumeric_sort(file_list)
+    def _clean(self, files):
+        # remove . files and things that aren't dicoms (useful in testing and
+        # on scanner)
+        return [x for x in files if '.DS_Store' not in x
+                and '.txt' not in x
+                and '.json' not in x
+                and not x.startswith('.')
+        ]
 
-        # Now go back through each entry and parse out the useful bits
-        contents = []
-        for i, entry in enumerate(file_list, 1):
-            _, _, _, _, size, month, day, time, name = entry.split()
-            year = datetime.now().year
-
-            # If the entry is more than a year old, the `time` entry
-            # will be a year. But we don't care about those files for
-            # real-time usage, so skip them.
-            if ":" not in time:
-                continue
-
-            # The ls output only gives us timestamps at minute resolution
-            # so we are going to use the index in the list to mock a
-            # microsecond timestamp. This assumes that we're getting the
-            # directory contents in a meaningful sequential order.
-            # That should be true because of a) how the scanner names DICOMS
-            # and b) the sorting operation we performed above
-            time_str = "{} {} {} {}:{:06d}".format(year, month, day, time, i)
-
-            # Get a unique timestamp for this entry
-            timestamp = datetime.strptime(time_str, "%Y %b %d %H:%M:%f")
-
-            # Insert a tuple of (timestamp, size, name) for this entry
-            contents.append((timestamp, int(size), name))
-
-        # Return this list sorted, which will be in timestamp order.
-        # Because of how timestamps work, this is going to be somewhat
-        # incorrect. If we created File A on November 16, 2013 and today
-        # is November 15, 2014, a file created today is going to look "older"
-        # than File A. However I think this won't be a problem in practice,
-        # because the scanner doesn't keep files on it for that long.
-        # (But maybe it will be an issue right around New Years?)
-        contents.sort()
-        return contents
-
-    def _latest_entry(self, dir):
-        """Return a path to the most recent entry in `dir`."""
-        contents = self.list_dir(dir)
+    def _latest_entry(self, path, sort='alpha'):
+        """
+        Return a path to the most recent entry in `path`.
+        Most calls we make to this should be alphanumerically sorted, but
+        in some cases we want the most recently modified on the scanner.
+        """
+        contents = self.list_dir(path, sort=sort)
 
         # Contents should be sorted, so we want last entry
-        latest_name = contents[-1][-1]
+        latest_name = contents[-1]
 
         # Build and return the full path
-        path = op.join(dir, latest_name)
+        path = op.join(path, latest_name)
         return path
 
     @property
     def latest_exam(self):
-        """Return a path to the most recent exam directory."""
-        # The exam directory should always be two layers deep
-        latest_patient = self._latest_entry(self.base_dir)
+        """
+        Dicoms are stored in basedir/patient/exam/session
+        Return a path to the most recent exam directory.
+
+        The latest patient, which will have a name like p2019,
+        may not be the patient with the highest number in cases with
+        multiple scans. Sorting by mtime will return the patient
+        who has most recently been scanned, assuming at least one scan
+        has been performed.
+        """
+        latest_patient = self._latest_entry(self.base_dir, sort='mtime')
         return self._latest_entry(latest_patient)
 
     @property
@@ -160,6 +199,7 @@ class ScannerClient(object):
         # The series directory should always be three layers deep
         return self._latest_entry(self.latest_exam)
 
+
     def series_dirs(self, exam_dir=None):
         """Return a list of all series dirs for an exam."""
         if exam_dir is None:
@@ -167,7 +207,7 @@ class ScannerClient(object):
 
         # Get the list of entries in the exam dir
         exam_contents = self.list_dir(exam_dir)
-        series_dirs = [op.join(exam_dir, n) for t, s, n in exam_contents]
+        series_dirs = [op.join(exam_dir, n) for n in exam_contents]
         return series_dirs
 
     def series_files(self, series_dir=None):
@@ -177,11 +217,15 @@ class ScannerClient(object):
 
         # Get the list of entries in the exam dir
         series_contents = self.list_dir(series_dir)
-        series_files = [op.join(series_dir, n) for t, s, n in series_contents]
+        series_files = [op.join(series_dir, n) for n in series_contents]
         return series_files
 
     def series_info(self, series_dir=None):
-        """Return a dicts with information about a series."""
+        """
+        Return a dict with information about a series.
+        In practice, this function adds significant overhead if performing
+        neurofeedback, so we often will want to skip.
+        """
         if series_dir is None:
             series_dir = self.latest_series
 
@@ -193,7 +237,7 @@ class ScannerClient(object):
             return {}
 
         # Build the dictionary based off the first DICOM in the list
-        _, _, filename = series_files[0]
+        filename = series_files[0]
         dicom_path = op.join(series_dir, filename)
         first_dicom = self.retrieve_dicom(dicom_path)
         dicom_timestamp = first_dicom.StudyDate + first_dicom.StudyTime
@@ -205,19 +249,46 @@ class ScannerClient(object):
             "Series": first_dicom.SeriesNumber,
             "Description": first_dicom.SeriesDescription,
             "NumTimepoints": n_timepoints,
-            "NumAcquisitions": len(series_files),
-            }
+            "NumAcquisitions": len(series_files)
+        }
 
         return series_info
 
     def retrieve_file(self, filename):
-        """Return a file as a string buffer."""
-        self.reconnect()
-        buf = StringIO()
-        self.ftp.retrbinary("RETR {}".format(filename), buf.write)
-        buf.seek(0)
+        """Return a file as a cstring buffer."""
+
+        if self.lock is not None: self.lock.acquire()
+        buf = cStringIO.StringIO()
+
+        try:
+            handle = self.sftp.open(filename, 'r', self.max_buf_size)
+            while True:
+                # In practice, we will read all the data, but SFTP can be slow
+                # when we read into a buffer smaller than the file.
+                data = self.sftp.read(handle, self.max_buf_size)
+                if not data:
+                    break
+                buf.write(data)
+            buf.seek(0)
+            self.sftp.close(handle)
+        finally:
+            if self.lock is not None: self.lock.release()
+
         return buf
+
+
 
     def retrieve_dicom(self, filename):
         """Return a file as a dicom object."""
-        return dicom.filereader.read_file(self.retrieve_file(filename))
+        try:
+            return pydicom.read_file(self.retrieve_file(filename), force=True)
+        except Exception as e:
+            raise(e, "Exception {} raised with {}, {}".format(
+                  (filename, type(e).__name__)))
+
+
+
+
+
+
+
