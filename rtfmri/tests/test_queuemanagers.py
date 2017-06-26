@@ -15,10 +15,10 @@ class TestFinder(object):
     def test_control(self):
 
         f = qm.Finder(interval=2)
-        assert f.alive
+        assert f.is_alive
 
         f.halt()
-        assert not f.alive
+        assert not f.is_alive
 
         nt.assert_equal(f.interval, 2)
 
@@ -31,19 +31,19 @@ class TestFinders(object):
         # is currently getting copied throughout the codebase
 
         cls.host = "localhost"
-        cls.port = 2121
+        cls.port = 2124
         cls.base_dir = "test_data"
 
         # Pass the default credentials to connect to the test FTP server
         cls.client = client.ScannerClient(hostname=cls.host,
                                           port=cls.port,
                                           base_dir=cls.base_dir)
-        cls.no_server = cls.client.ftp is None
+        cls.no_server = cls.client.sftp is None
 
     @classmethod
     def teardown_class(cls):
 
-        if cls.client.ftp is not None:
+        if cls.client.sftp is not None:
             cls.client.close()
 
     def test_series_finder(self):
@@ -53,7 +53,7 @@ class TestFinders(object):
 
         series_dirs = [s for s in self.client.series_dirs()
                        if self.client.series_info(s)["NumTimepoints"] > 6]
-
+        print(series_dirs)
         q = Queue()
         f = qm.SeriesFinder(self.client, q)
         f.start()
@@ -98,35 +98,6 @@ class TestFinders(object):
             f.halt()
             f.join()
 
-    def test_volumizer_affine(self):
-
-        class MockDicom(object):
-
-            PixelSpacing = ['2', '2']
-            SpacingBetweenSlices = '2.2'
-            ImagePositionPatient = ['-106.289', '-76.0826', '115.279']
-
-            def __contains__(self, name):
-
-                try:
-                    getattr(self, name)
-                    return True
-                except AttributeError:
-                    return False
-
-        want_affine = np.array([
-            [2, 0, 0,   106.289],
-            [0, 2, 0,   76.0826],
-            [0, 0, 2.2, 115.279],
-            [0, 0, 0,   1]]
-            )
-
-        volumizer = qm.Volumizer(None, None)
-        dcm = MockDicom()
-
-        got_affine = volumizer.generate_affine_matrix(dcm)
-
-        np.testing.assert_array_equal(want_affine, got_affine)
 
     def test_volumizer_volume_assembly(self):
 
@@ -186,3 +157,7 @@ class TestFinders(object):
         finally:
             volumizer.halt()
             volumizer.join()
+
+    def test_dicom_filter(self):
+        #todo add a test ROI to use with a dicom filter, and check image shape
+        pass
