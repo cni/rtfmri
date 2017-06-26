@@ -1,25 +1,56 @@
 from __future__ import print_function
+import time
 
+import nose.tools as nt
 from nose import SkipTest
+
 from .. import interface
 
 
 class TestScannerInterface(object):
+    @classmethod
+    def setup_class(cls):
 
-    def test_interface(self):
+        cls.host = "localhost"
+        cls.port = 2124
+        cls.base_dir = "test_data"
 
-        # This is mostly just a smoketest to touch parts of the code
+        # Pass the default credentials to connect to the test FTP server
+        cls.interface = interface.ScannerInterface(hostname=cls.host,
+                                                   port=cls.port,
+                                                   base_dir=cls.base_dir)
+        cls.interface.start()
+        cls.no_server = not cls.interface.has_sftp_connection
 
-        scanner = interface.ScannerInterface("localhost", 2121,
-                                             base_dir="test_data")
+    @classmethod
+    def teardown_class(cls):
 
-        if not scanner.has_ftp_connection:
+        if not cls.no_server:
+            cls.interface.shutdown()
+
+    def test_sftp_connection(self):
+        # Pass the default credentials to connect to the test FTP server
+
+
+        if self.no_server:
+            print("No connection")
             raise SkipTest
 
-        try:
-            scanner.start()
-            vol = scanner.get_volume(timeout=5)
-            assert vol
 
-        finally:
-            scanner.shutdown()
+        nt.assert_equal(self.interface.series_finder.client.base_dir, 'test_data')
+        nt.assert_equal(self.interface.dicom_finder.client.latest_exam,
+                        'test_data/p004/e4120')
+
+        nt.assert_equal(self.interface.series_finder.client.latest_series,
+                        'test_data/p004/e4120/4120_11_1_dicoms')
+
+        self.interface.shutdown()
+
+    def test_get_volume(self):
+        # This will currently fail if the volumizer crashes...
+
+        vol = self.interface.get_volume(timeout=5)
+
+        assert vol
+
+

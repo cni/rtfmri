@@ -79,8 +79,7 @@ class ScannerClient(object):
 
             # Support for keys would go like so, currently not tested but
             # included here because of poor documentation.
-            self.private_key = None
-            if self.private_key:
+            if self.private_key is not None:
                 self.session.userauth_publickey_fromfile(self.username,
                                                          self.public_key,
                                                          self.private_key,
