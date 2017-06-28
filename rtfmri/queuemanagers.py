@@ -15,6 +15,7 @@ from dcmstack.extract import default_extractor
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.WARNING)
 logging.basicConfig(format='%(asctime)s %(message)s')
 
 def time_it(tic, message, level='debug'):
@@ -173,7 +174,9 @@ class DicomFinder(Finder):
     #@profile
     def run(self):
         """This function gets looped over repeatedly while thread is alive."""
-
+        # Keep track of when we last grabbed a dicom so that if dicoms stop
+        # appearing we can kill the thread.
+        self.last_dicom_time = time.time()
         while self.is_alive:
 
             tic = time.time()
@@ -186,6 +189,11 @@ class DicomFinder(Finder):
                 # in the queue, keep only the new ones
                 new_files = [f for f in series_files
                              if f not in self.dicom_files]
+
+                if not new_files:
+                    if time.time() - self.last_dicom_time > 5:
+                        print("No dicoms left, halting...")
+                        self.halt()
 
                 # If we only want get certain slices, then assuming
                 # we have a legal list we need to check
@@ -209,15 +217,16 @@ class DicomFinder(Finder):
 
 
                     dcm = self.client.retrieve_dicom(fname)
+                    self.last_dicom_time = time.time()
 
-                    if self.dicom_filter is not None and not self.dicom_filter.ready:
+                    if self.dicom_filter is not None and not self.dicom_filter.fitted:
                         # then we're collecting first volume to setup filter
                         logger.debug("Updating dicom filter...")
                         volume_number = int(dcm[(0x0020, 0x0100)].value)
                         with self.dicom_filter.lock:
                             self.dicom_filter.update(fname, dcm)
 
-                        if self.dicom_filter.ready:
+                        if self.dicom_filter.fitted:
                             logger.info("Dicom filter ready.")
                             filtered_files = self.dicom_filter.filter(
                                 new_files)
@@ -254,7 +263,7 @@ class Volumizer(Finder):
 
     """
 
-    def __init__(self, dicom_q, volume_q, interval=0.01):
+    def __init__(self, dicom_q, volume_q, interval=0.01, keep_vols=True):
         """Initialize the queue."""
         super(Volumizer, self).__init__(interval)
 
@@ -263,6 +272,11 @@ class Volumizer(Finder):
         self.volume_q = volume_q
         self.nqueued = 0
         self.n_gotten = 0
+
+        #whether to store all volumes assembled in the volumizer.
+        self.keep_vols = keep_vols
+        self.assembled_volumes = []
+        self.last_assembled_time = time.time()
 
         self.dicom_filter = None
 
@@ -350,6 +364,10 @@ class Volumizer(Finder):
             image=nii_img,
         )
         time_it(tic, "Assembled a volume", level='info')
+
+        if self.keep_vols:
+            self.assembled_volumes.append(volume)
+        self.last_assembled_time = time.time()
         return volume
 
     def missing_slices(self, need, have):
@@ -378,11 +396,15 @@ class Volumizer(Finder):
                 time_it(tic, "grabbed a dicom in volumizer:")
                 self.n_gotten += 1
             except Empty:
+                print
                 # condition where dicom queue is empty but we
                 # can assemble the next slice
+
                 slices_missing = self.missing_slices(instance_numbers_needed,
                                                      instance_numbers_gathered)
-
+                if time.time() - self.last_assembled_time > 20:
+                    print("More than 10 seconds since last volume, halting...")
+                    self.halt()
                 if len(instance_numbers_needed) and not slices_missing:
                     pass
                 else:
@@ -429,7 +451,7 @@ class Volumizer(Finder):
             if self.dicom_filter is not None and not self.filtered:
                 """If we are using a filter, we will only need to gather
                 instance numbers if their slice number is allowed by the filter"""
-                if self.dicom_filter.ready:
+                if self.dicom_filter.fitted:
                     instance_numbers_needed = [
                         x for x in instance_numbers_needed
                         if x % slices_per_volume in self.dicom_filter.legal_indices
@@ -438,9 +460,8 @@ class Volumizer(Finder):
                     self.filtered = True
 
             #If you really need to debug the dicom_filter...
-            #print("Missing:",self.missing_slices(instance_numbers_needed,
-            #                                     instance_numbers_gathered)
-            #print("Have:", instance_numbers_gathered)
+            print("Missing:",self.missing_slices(instance_numbers_needed,instance_numbers_gathered))
+            print(("Have: {}".format(instance_numbers_gathered)))
 
             if set(instance_numbers_needed) <= set(instance_numbers_gathered):
                 # Files are not guaranteed to enter the DICOM queue in any

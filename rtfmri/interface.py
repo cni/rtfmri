@@ -75,7 +75,7 @@ class ScannerInterface(object):
     def use_newest_exam_series(self, predict=False):
 
         client = self.dicom_finder.client
-        latest_patient = client._latest_entry(client.base_dir, sort='atime')
+        latest_patient = client._latest_entry(client.base_dir, sort='mtime')
         latest_exam = client._latest_entry(latest_patient)
         newest_series = client._latest_entry(latest_exam)
         if predict:
@@ -91,6 +91,10 @@ class ScannerInterface(object):
             self.dicom_finder.series_q.queue.clear()
         self.dicom_finder.series_q.put(series)
         print("Using series %s for the session only." % series)
+
+    def set_dicom_filter(self, dcmf):
+        self.dicom_finder.set_dicom_filter(dcmf)
+        self.volumizer.set_dicom_filter(dcmf)
 
     def start(self):
         """Start the constituent threads."""

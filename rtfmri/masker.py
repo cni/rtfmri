@@ -14,6 +14,7 @@ from scipy.ndimage import measurements, interpolation
 from utilities import alphanum_key
 
 
+
 class Masker(object):
     """
     Class that takes a binary mask.nii file and allows us to use it
@@ -35,7 +36,7 @@ class Masker(object):
         else:
             self.center = center
         print("Center=", center)
-        print("COM calc=", self.find_center_of_mass())
+        print("COM calc=", self.find_center_of_mass(self.masker))
 
         # the radius of the mask, used for determining what data to read.
         self.radius = radius
