@@ -19,9 +19,17 @@ from sftpserver.stub_sftp import StubServer, StubSFTPServer
 HOST, PORT = 'localhost', 2124
 BACKLOG = 10
 
+def get_test_key():
+    # make sure we have the key:
+    # the key is rsa from password 'test_pass'
+    test_key = '-----BEGIN RSA PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCZtHe5UahxLAkb\na7IXFnkvfpejJ+UqHGT23x6uPpLmKb1Yxjw3KmPQsd/QUjmrDr/hlN9oq5U6CANV\nIRipz8U+pdMfYB8ZI8q/kfUbCuFVBDdtdWBv7s/vabQT5g932KM8vdanUUkGwqXL\nGjQr7iS/e4tzsinUu6FnEl2pIH6BmkWLBB1QojSPfR0eQMU+Zy04rrB1Rztbmcad\nlw9+3mqfpba0YPuin1izA0SVfnlez73nxLkxGiGbf1DBHRlVr7re3VRVhTzm8Wru\ncbJGY+Q24kW04BUg6E1H9e8gWPjXlO744UGYmEwZO+MMtpSJIiWKDAezFr3nZefw\n6+GDxKYJAgMBAAECggEAOvASgIMpXcwO6e7P6T561ZVrO+rOWulsZaWEtDfWSF90\n9Zd9+4FLqPir48vDxS3wseVODWrN2+S6smfwdxzue2lGnV9UTWWGFxM2s1nmsZze\nTCCYDBO8tAcKQB8Vi1UMsvvwVVQ79lWpEUpI+xdkC/CptoF4vNP9vfIy6+lD2Rng\npzf6reMkLIkPwTxA90nFpxhvBGrRen07sw5Jvx5mbGwK/IcmCfAlxjrv/nKJ+0lu\nj/enMYgCUAIAJ8wpWroYhGJvktevaJFfyR2KnyI/dhQgNJHeFzcCxpprDrAy8bN+\nFEd7VlgbuG/aDIYZwfUxvXKEEjeF76TssEFURLY5AQKBgQDLjqZBRCuiUICCQ9wJ\nvBCv3Tyi1thk/eWVnX1W86BQ0vGSch7njO3Ks4kCACLm9DUPNsJep94Io5knKaVu\nI3ZUNUGzcsCrcLMYNEeljUTuRQ49NfCaWayhQHkoOMGWke/Moj/sI3MryeYG0HAp\nb6ZkoxI49Lju5PY2icgM8BS2cQKBgQDBTeB1UvWP6ASHBq/EnvnrtvHMIMR4eBS9\n/GR8SJPCCkopbZJtjngVGC8eSHsggcFQKXVadn+uC46NZ/4gMgF2KYwall9okY6d\nG57GfKRSvsE0ZRR+FpQtTnqUfOudLKl53h9FDunl7sRIYIoT5eL4uHrHv3NNPDqN\n1pDD3qilGQKBgFvgCtIyfq9IPniNQGd0ZuO5q4CkEA+lOVaKOuRgGd/hFf/PWnuQ\ndFOlLRWmEhrD5p7zTE+E3QZxMNMoTO6lOudPElR4WtYGjA9EqYHjfVU9/etKyUoh\nZ3VwsD6jP11CiUWHheqDJZyCCDzTH4zUQ/nwUG08p6vL1AVRsuWEBxVBAoGAUHFh\nLFH2wQlUAQEGWnOyG6bJXyJvwJZwQ1PqWVI2szRnAnCH1DHKxTSIPzj4jGGTGhH2\ntUvE/J/wleYl+i31L8BAfrv/Plv8lmLtIzqxg4HAk1ZRPduVlHkpR+vofUMd0Apg\nxvNa4QYJBvmt3HP5jXnwFnoUuJqM34PgQLLDSdkCgYBuQj5rG8Psuq06Q0j89/aV\nCm8hj3Q5qMKIaRotiQ1ZXN2kYVc6Nkx7kMN+Tv2vDPdIzMBEeJy5f5lDVUJvG9mR\nZ7BAm8bGGiklDisSItlotsbIE2q71kgrxI+fJ4nJeOfx7YcXlABjKb8kklWBSZo1\n/hpFAE/3OYFLWGVLBCuhiw==\n-----END RSA PRIVATE KEY-----\n'
+    with open('test.key', 'w') as f:
+        f.write(test_key)
+
 # TODO add new test data that includes ROI masks and more recent dicoms
 # with newer naming convventions
 def get_test_data(data_dir='test_data', url='http://cni.stanford.edu/download/rtfmri_test_data.tgz'):
+
     # Ensure data_dir is a full path
     data_dir = os.path.realpath(data_dir)
     if len(glob(os.path.join(data_dir,'*/*/*/*.dcm')))<100:
@@ -105,7 +113,7 @@ def start_server(host, port, keyfile, level):
 
 def main():
     usage = """\
-    usage: sftpserver [options]
+    usage: python rt_sftp_test_server [options]
     -k/--keyfile should be specified
     """
     parser = optparse.OptionParser(usage=textwrap.dedent(usage))
@@ -121,9 +129,8 @@ def main():
         help='Debug level: WARNING, INFO, DEBUG [default: %default]'
         )
     parser.add_option(
-        '-k', '--keyfile', dest='keyfile', metavar='FILE',
-        help='Path to private key, for example /tmp/test_rsa.key',
-        default='test.key'
+        '-k', '--keyfile', dest='keyfile', metavar='FILE', default='test.key',
+        help='Path to private key, for example /tmp/test_rsa.key'
         )
 
     options, args = parser.parse_args()
@@ -135,5 +142,6 @@ def main():
     start_server(options.host, options.port, options.keyfile, options.level)
 
 if __name__ == '__main__':
-    get_test_data()
+    #get_test_key()
+    #get_test_data()
     main()

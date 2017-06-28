@@ -189,7 +189,9 @@ class ScannerClient(object):
         who has most recently been scanned, assuming at least one scan
         has been performed.
         """
+        print(self.base_dir)
         latest_patient = self._latest_entry(self.base_dir, sort='mtime')
+        print(latest_patient)
         return self._latest_entry(latest_patient)
 
     @property
