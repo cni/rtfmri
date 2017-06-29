@@ -14,13 +14,14 @@ try:
 except:
     pass
 
-from rtfmri.fetcher import SessionFetcher
+from rtfmri.fetcher import SeriesFetcher
+
 
 def main(arglist):
     args = parse_args(arglist)
-    client = SessionFetcher(hostname=args.hostname, username=args.username,
-                           password=args.password, port=args.port,
-                           base_dir=args.image_dir, outfile=args.output)
+    client = SeriesFetcher(hostname=args.hostname, username=args.username,
+                            password=args.password, port=args.port,
+                            base_dir=args.image_dir, outfile=args.output)
 
 
 def parse_args(arglist):
@@ -34,26 +35,27 @@ def parse_args(arglist):
     parser.add_option(
         '-u', '--username', default='',
         help='login username USERNAME '
-        )
+    )
     parser.add_option(
         '-p', '--password', default='',
         help='login PASSWORD'
-        )
+    )
     parser.add_option(
         '-o', '--output',
         help='create new nii file OUTPUT [required]'
-        )
+    )
     parser.add_option(
         '--host', dest='hostname', default='cnimr',
         help='find scanner at HOST [default: %default]')
     parser.add_option(
         '--port', dest='port', type='int', default=22,
         help='connect via PORT [default: %default]'
-        )
+    )
     parser.add_option(
-        '--image-dir', dest = 'image_dir', default='/export/home1/sdc_image_pool/images',
+        '--image-dir', dest='image_dir',
+        default='/export/home1/sdc_image_pool/images',
         help='directory containing patients/exams/sessions [default: %default]'
-        )
+    )
 
     options, args = parser.parse_args()
 

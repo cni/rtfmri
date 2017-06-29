@@ -102,7 +102,22 @@ class ScannerClient(object):
         """Reinitialize SFTP connection if it was dropped."""
         pass
 
-    def list_dir(self, remote_path='.', sort='alpha'):
+    def path_exists(self, remote_path):
+        '''Try to open remote dir, return false if we fail'''
+        exist=True
+        if self.lock is not None:
+            self.lock.acquire()
+        try:
+            handle = self.sftp.opendir(remote_path)
+            self.sftp.close(handle)
+        except Exception:
+            exist=False
+        finally:
+            if self.lock is not None:
+                self.lock.release()
+        return exist
+
+    def list_dir(self, remote_path='.', sort='alpha', skip_parse = True):
         """Return a list of files in a directory sorted
         either alphanumerically if sort=='alpha' or based upon
         one of the attributes we get from sftp listdir which we put
@@ -189,9 +204,9 @@ class ScannerClient(object):
         who has most recently been scanned, assuming at least one scan
         has been performed.
         """
-        print(self.base_dir)
+        #print(self.base_dir)
         latest_patient = self._latest_entry(self.base_dir, sort='mtime')
-        print(latest_patient)
+        #print(latest_patient)
         return self._latest_entry(latest_patient)
 
     @property

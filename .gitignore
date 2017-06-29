@@ -35,6 +35,9 @@ nosetests.xml
 .pydevproject
 *.swp
 test_data
+test.key
 venv
 new_test_data
 emily*
+*.nii
+*.nii.gz

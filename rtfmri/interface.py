@@ -81,9 +81,11 @@ class ScannerInterface(object):
         if predict:
             #add one to the current series number and use that
             path, file = os.path.split(newest_series)
-            newest_series = 's' + str(int(file[1:]) + 1) #
+            series_name = 's' + str(int(file[1:]) + 1) #
+            newest_series = os.path.join(path, series_name)
 
-        self.use_series(newest_series)
+        return self.use_series(newest_series)
+
 
 
     def use_series(self, series):
@@ -91,6 +93,7 @@ class ScannerInterface(object):
             self.dicom_finder.series_q.queue.clear()
         self.dicom_finder.series_q.put(series)
         print("Using series %s for the session only." % series)
+        return series
 
     def set_dicom_filter(self, dcmf):
         self.dicom_finder.set_dicom_filter(dcmf)
