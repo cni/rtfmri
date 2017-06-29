@@ -54,6 +54,8 @@ if __name__ == '__main__':
     newest_series = nf.set_series(use_newest=True,
                                   predict=False)
 
+    nf.set_series(use_newest=False, series ='new_test_data/scanner_data/p2173/e3765/s42148')
+
     visualizers = {1:'text', 2:'graph', 3:'thermometer'}
     nf.init_visualizer(visualizer=visualizers[VISUALIZER_KIND])
 

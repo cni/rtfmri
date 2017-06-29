@@ -460,8 +460,8 @@ class Volumizer(Finder):
                     self.filtered = True
 
             #If you really need to debug the dicom_filter...
-            print("Missing:",self.missing_slices(instance_numbers_needed,instance_numbers_gathered))
-            print(("Have: {}".format(instance_numbers_gathered)))
+            # print("Missing:",self.missing_slices(instance_numbers_needed,instance_numbers_gathered))
+            # print(("Have: {}".format(instance_numbers_gathered)))
 
             if set(instance_numbers_needed) <= set(instance_numbers_gathered):
                 # Files are not guaranteed to enter the DICOM queue in any
@@ -487,6 +487,7 @@ class Volumizer(Finder):
                                       max(instance_numbers_needed))))
                 tic = time.time()
                 volume = self.assemble_volume(volume_slices)
+                time.sleep(1)
 
                 # Put that object on the dicom queue
                 self.volume_q.put(volume, timeout=self.interval)

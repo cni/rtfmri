@@ -194,7 +194,7 @@ class PyGameVisualizer(RoiVisualizer):
         self.clock = pygame.time.Clock()
         self.state = 0
         self.tic = 0
-        self.rate = 100
+        self.rate = 50
         self.period = 2000  # how often to refresh state
         self.pygame_live = False
         self.vec_set = False
@@ -230,6 +230,8 @@ class PyGameVisualizer(RoiVisualizer):
 
         tr = int((time.time() - self.start) // self.TR)
         label = myfont.render(self.text[self.vec[tr]], 1, (255,255,0))
+        self.trial_type = label
+        self.next_trial_type = self.vec[min(len(self.vec)-1, tr+1)]
         w,h = self.screen.get_size()
         self.screen.blit(label, (w//3,h//15))
         #pdb.set_trace()
@@ -268,15 +270,28 @@ class Thermometer(PyGameVisualizer):
         self.xywh = xywh
         pygame.draw.rect(self.screen, box_color, xywh, 4)
 
+    def center_text(self, message):
+        sw, sh = self.screen.get_size()
+        font = pygame.font.Font(None, 50)
+        text = font.render(message, True, (255,255,0))
+        text_rect = text.get_rect(center=(sw/2, sh/2))
+        self.screen.blit(text, text_rect)
 
 
     def run(self, random=False):
         mainloop = True
+        self.itival = 0
+        self.next_trial_type=self.itival
+        self.draw_box()
+        start_time = time.time()
+
 
         while mainloop:
             # Limit frame speed to 50 FPS
             self.clock.tick(self.rate)
             self.tic += 1
+
+            #reframe if needed
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     mainloop = False
@@ -285,8 +300,15 @@ class Thermometer(PyGameVisualizer):
 
             # Redraw the background
             self.screen.fill(self.bg_color)
-            self.draw_box()
-            self.update_temp(random)
+
+            if self.next_trial_type != self.itival:
+                #draw the thermometer...
+                self.draw_box()
+                self.update_temp(random)
+
+
+            else:
+                self.center_text(str(time.time()-start_time))
             if self.vec_set:
                 self.display_vectext()
             pygame.display.flip()
@@ -301,9 +323,9 @@ class Thermometer(PyGameVisualizer):
         target_y = top_y + int(((bottom_y - top_y) * (100-self.temp)/100)//1)
         if not hasattr(self, 'old_y'):
             self.old_y = target_y
-        if self.old_y == target_y:
-            if random() > .5:
-                target_y += randint(-10, 10)
+        # if self.old_y == target_y:
+        #     if random() > .5:
+        #         target_y += randint(-10, 10)
         diff = target_y - self.old_y
         if abs(diff) > self.max_move:
             y = self.old_y + self.max_move if diff > 0 else self.old_y - self.max_move
@@ -326,6 +348,7 @@ class Thermometer(PyGameVisualizer):
             # get a random temperature
             self.temp = self.get_random_temp()
         self._draw_temp()
+        print(self.temp)
 
     def get_temp(self):
         self.update_state()

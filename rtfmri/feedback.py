@@ -81,6 +81,8 @@ class Neurofeedback(object):
         self.visualizer = v
 
     def set_timing(self, timing_file, timing_texts, TR=2):
+        if self.visualizer_kind!='thermometer':
+            return
         vec = np.genfromtxt(timing_file)
         self.visualizer.set_regressors(vec = vec, text=timing_texts, TR=TR)
 
