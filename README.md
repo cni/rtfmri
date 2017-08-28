@@ -5,12 +5,12 @@ Real-time interface for a GE MRI system.
 
 Project Goal
 ------------
-Our goal is to process functional MRI data in near real-time as brain measurements are made. Potential applications for this system include neuro-feedback experiments and real-time monitoring of data quality for any study.
+Our goal is to process functional MRI data in near real-time as brain measurements are made. Potential applications for this system include neuro-feedback experiments and real-time monitoring of data quality for any study. 
 
 History
 -------
 
-The project was started with a multi-threading skeleton by Gunnar Schaefer. Kiefer Katovich then built the current system on top of this and got the basic process working. Bob Dougherty refactored the dicom finder to use a more robust ftp-based method and incorporated nipy realignment tools to make a simple real-time subject motion tracker. Michael Waskom refactored the above work into a more modular, testable system.
+The project was started with a multi-threading skeleton by Gunnar Schaefer. Kiefer Katovich then built the current system on top of this and got the basic process working. Bob Dougherty refactored the dicom finder to use a more robust ftp-based method and incorporated nipy realignment tools to make a simple real-time subject motion tracker. Michael Waskom refactored the above work into a more modular, testable system. Nick Borg then refactored the code to use sftp via libssh2 rather than ftp after GE discontinuid its support, and made it possible to get ROI timecourses in real time with a niftii mask. 
 
 Getting started
 ---------------
@@ -53,19 +53,10 @@ rtmotion.halt()
 rtmotion.join()
 ```
 
-Most users will be interested in the web-app bassed interface for viewing the real-time motion results. Currently, that can be activated by running the following commands in a terminal:
-
-```
-bokeh-server &
-python interface_prototype.py -hostname localhost -port 2121 -base_dir test_data
-```
-
-The current implementation of this app is highly experimental and will change. Currently it just shows the results from the current run and will refresh the plots when a new run starts on the scanner.
-
 Testing
 -------
 
-Testing is accomplished using `nose`. Most of the code needs the mock scanner ftp server running (see `rt_ftp_test_server.py`), but the test suite should be able to pass without a live server. Call `nosetests` from the root source directory to exercise the test suite.
+Testing is accomplished using `nose`. Most of the code needs the mock scanner sftp server running (see `rt_sftp_test_server.py`), but the test suite should be able to pass without a live server. Call `nosetests` from the root source directory to exercise the test suite.
 
 Dependencies
 ------------
@@ -81,10 +72,8 @@ Real-time motion analyzer:
 
 - nipy 0.4+
 
-Motion analyzer web-app:
-
-- seaborn
-- bokeh 0.7+
+Test Server
+- paramiko
 
 License
 -------
@@ -93,6 +82,7 @@ License
 - Copyright (c) 2012 Kiefer Katovich
 - Copyright (c) 2013-2015 Bob Dougherty
 - Copyright (c) 2014-2015 Michael Waskom
+- Copyright (c) 2017 Nick Borg
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
