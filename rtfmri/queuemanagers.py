@@ -168,7 +168,8 @@ class DicomFinder(Finder):
         self.dicom_files = set()
 
         # keep track of dicoms queued for timing evaluation.
-        self.nqueued = 0
+        self.n_dicoms_queued = 0
+        self.total_time_dicom_retrival = 0
         self.dicom_filter = None
 
     #@profile
@@ -201,11 +202,14 @@ class DicomFinder(Finder):
                     new_files = self.dicom_filter.filter(new_files)
 
                 if new_files:
+                    files_to_enqueue = min(50, len(new_files))
+                    new_files = new_files[:files_to_enqueue]
                     logger.debug(("Putting {:d} files into dicom queue"
                                   .format(len(new_files))))
 
                 # Place each new file onto the queue
                 filtered_files = set(new_files)
+
 
                 for fname in new_files:
                     # do not fetch unwanted files if using a dicom filter.
@@ -233,8 +237,13 @@ class DicomFinder(Finder):
                             # print(filtered_files)
 
                     self.dicom_q.put(dcm, timeout=self.interval)
-                    self.nqueued += 1
-                    time_it(tic, "Dicom series: Retrieved a dicom ")
+
+                    self.n_dicoms_queued += 1
+
+                    self.total_time_dicom_retrival += time_it(
+                        tic, "Dicom series: Retrieved a dicom "
+                    )
+
                     tic = time.time()
 
                 # Update the set of files on the queue
@@ -270,8 +279,13 @@ class Volumizer(Finder):
         # The external queue objects we are talking to
         self.dicom_q = dicom_q
         self.volume_q = volume_q
-        self.nqueued = 0
-        self.n_gotten = 0
+        
+        self.n_dicoms_dequeued = 0
+        self.n_volumes_queued = 0
+       
+
+        self.total_dequeue_time = 0
+        self.total_assembly_time = 0
 
         #whether to store all volumes assembled in the volumizer.
         self.keep_vols = keep_vols
@@ -363,7 +377,7 @@ class Volumizer(Finder):
             ntp=float(dcm.NumberOfTemporalPositions),
             image=nii_img,
         )
-        time_it(tic, "Assembled a volume", level='info')
+        self.total_assembly_time +=  time_it(tic, "Assembled a volume", level='info')
 
         if self.keep_vols:
             self.assembled_volumes.append(volume)
@@ -389,22 +403,21 @@ class Volumizer(Finder):
         self.filtered = False
 
         while self.is_alive:
-            tic = time.time()
 
             try:
+                tic = time.time()
                 dcm = self.dicom_q.get(timeout=self.interval)
-                time_it(tic, "grabbed a dicom in volumizer:")
-                self.n_gotten += 1
+                self.total_dequeue_time += time_it(tic, "grabbed a dicom in volumizer:")
+                self.n_dicoms_dequeued += 1
             except Empty:
-                print
                 # condition where dicom queue is empty but we
                 # can assemble the next slice
 
                 slices_missing = self.missing_slices(instance_numbers_needed,
                                                      instance_numbers_gathered)
-                if time.time() - self.last_assembled_time > 20:
-                    print("More than 10 seconds since last volume, halting...")
-                    self.halt()
+                # if time.time() - self.last_assembled_time > 20:
+                #     print("More than 10 seconds since last volume, halting...")
+                #     self.halt()
                 if len(instance_numbers_needed) and not slices_missing:
                     pass
                 else:
@@ -491,7 +504,7 @@ class Volumizer(Finder):
 
                 # Put that object on the dicom queue
                 self.volume_q.put(volume, timeout=self.interval)
-                self.nqueued += 1
+                self.n_volumes_queued += 1
                 time_it(last_assembled, "Volumizer: Assemble and queue volume")
                 last_assembled = time.time()
 

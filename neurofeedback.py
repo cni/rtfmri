@@ -12,8 +12,8 @@ from rtfmri.feedback import Neurofeedback
                 # USER PARAMS
 #select the visualizer type:,1 = text, 2 = graph, 3 = thermometer
 VISUALIZER_KIND = 3
-TIMING_FILE     = '5tr_rand_iti.1D'
-MASK_NAME       = 'new_test_data/trial_mask.nii.gz'
+TIMING_FILE     = 'test_data/10tr_rand_iti.1D'
+MASK_NAME       = 'test_data/naccpos.nii.gz'
 #================================================
 #
 # Choose file that specifies trial type per tr, where
@@ -32,14 +32,17 @@ if __name__ == '__main__':
 
     host = "localhost"
     port = 2124
-    base_dir = "new_test_data/scanner_data"
+    base_dir = "test_data/test_dicoms"
 
 
     nf = Neurofeedback(hostname=host,
                        port=port,
                        username=username,
                        password=password,
-                       base_dir=base_dir)
+                       base_dir=base_dir, 
+                       width = 1000, height = 1000, 
+                       debug = True, 
+                       feedback = False)
 
 
     # Choose the mask we'll need to use. when filter=True, we only get dicoms
@@ -54,12 +57,12 @@ if __name__ == '__main__':
     newest_series = nf.set_series(use_newest=True,
                                   predict=False)
 
-    nf.set_series(use_newest=False, series ='new_test_data/scanner_data/p2173/e3765/s42148')
+    #nf.set_series(use_newest=False, series ='test_data/test_dicoms/20170831_1606/5_4_EPI29_2s_Excited1')
 
     visualizers = {1:'text', 2:'graph', 3:'thermometer'}
     nf.init_visualizer(visualizer=visualizers[VISUALIZER_KIND])
 
-    timing_text = {0: 'Try to Relax', 1: 'Raise the bar!', 2: 'Lower the bar'}
+    timing_text = {0: '', 1: 'Raise the bar!', 2: 'Lower the bar'}
     nf.set_timing(TIMING_FILE, timing_text, TR=2)
 
     #start the scan...

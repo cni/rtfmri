@@ -3,8 +3,10 @@ from __future__ import print_function
 
 import re
 import pdb
+import time
 import sys, socket
 from Queue import Queue, Empty
+from threading import Thread, Event, Lock
 
 import numpy as np
 
@@ -12,14 +14,15 @@ from .analyzers import MotionAnalyzer
 from .masker import Masker, DicomFilter
 from .interface import ScannerInterface
 from .visualizers import *
-from .utilities import start_scan
+from .utilities import start_scan as start_scanner
 
 
 class Neurofeedback(object):
 
     def __init__(self, hostname='cnimr', port=22, username='', password='',
                  base_dir="/export/home1/sdc_image_pool/images",
-                 use_analyzer=False):
+                 use_analyzer=False, width=1000, height=1000, debug=False, 
+                 feedback = True):
         # Pass the default credentials to connect to the test FTP server.
         # We also pass a dcm filter in order to only load needed dicoms
         # based on the mask.
@@ -41,6 +44,10 @@ class Neurofeedback(object):
         self.series=None
         self.use_analyzer=use_analyzer
         self.visualizer=None
+        self.width=width
+        self.height=height
+        self.debug=debug
+        self.feedback=feedback
 
     def use_mask(self, mask_path, center=None, radius=8, use_filter=False):
 
@@ -75,8 +82,9 @@ class Neurofeedback(object):
             v = GraphVisualizer(interface, self.masker)
 
         if visualizer=='thermometer':
-            v = Thermometer(interface, self.masker)
-            v.start_display()
+            v = Thermometer(interface, self.masker, debug=self.debug, 
+                feedback=self.feedback)
+            v.start_display(width = self.width, height=self.height)
 
         self.visualizer = v
 
@@ -97,7 +105,7 @@ class Neurofeedback(object):
 
         #First start the scan
         if not dry_run:
-            start_scan()
+            start_scaner()
         self.visualizer.start_timer()
 
         #pdb.set_trace()
@@ -113,3 +121,8 @@ class Neurofeedback(object):
 
         #start the visualizer
         self.visualizer.run()
+
+
+
+
+

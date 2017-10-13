@@ -1,0 +1,6 @@
+62c62,64
+<     section_start = find_private_section(dcm_data, 0x29, 'SIEMENS CSA HEADER')
+---
+>     #Normally we check a bunch of fields with re for 'SIEMENS'.
+>     # Since we're on GE, this costs us lots of time.
+>     section_start = None #find_private_section(dcm_data, 0x29, 'SIEMENS CSA HEADER')

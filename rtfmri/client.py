@@ -13,7 +13,7 @@ import os.path as op
 from datetime import datetime
 
 import libssh2
-import pydicom
+import dicom
 
 from utilities import alphanum_key
 
@@ -297,10 +297,10 @@ class ScannerClient(object):
     def retrieve_dicom(self, filename):
         """Return a file as a dicom object."""
         try:
-            return pydicom.read_file(self.retrieve_file(filename), force=True)
+            return dicom.read_file(self.retrieve_file(filename), force=True)
         except Exception as e:
-            raise(e, "Exception {} raised with {}, {}".format(
-                  (filename, type(e).__name__)))
+            print("Received an exception:", e, filename)
+            raise e
 
 
 

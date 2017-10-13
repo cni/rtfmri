@@ -142,6 +142,6 @@ def main():
     start_server(options.host, options.port, options.keyfile, options.level)
 
 if __name__ == '__main__':
-    #get_test_key()
+    get_test_key()
     #get_test_data()
     main()
