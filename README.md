@@ -7,9 +7,10 @@ Project Goal
 ------------
 Our goal is to process functional MRI data in near real-time as brain measurements are made. Potential applications for this system include neuro-feedback experiments and real-time monitoring of data quality for any study. 
 
+Neuro-feedback is currently on the feedback branch.
+
 History
 -------
-
 The project was started with a multi-threading skeleton by Gunnar Schaefer. Kiefer Katovich then built the current system on top of this and got the basic process working. Bob Dougherty refactored the dicom finder to use a more robust ftp-based method and incorporated nipy realignment tools to make a simple real-time subject motion tracker. Michael Waskom refactored the above work into a more modular, testable system. Nick Borg then refactored the code to use sftp via libssh2 rather than ftp after GE discontinuid its support, and made it possible to get ROI timecourses in real time with a niftii mask. 
 
 Getting started
