@@ -202,12 +202,12 @@ class DicomFinder(Finder):
                     new_files = self.dicom_filter.filter(new_files)
 
                 if new_files:
-                    files_to_enqueue = min(50, len(new_files))
-                    new_files = new_files[:files_to_enqueue]
+                    #files_to_enqueue = min(50, len(new_files))
+                    #new_files = new_files[:len(new_files)]
                     logger.debug(("Putting {:d} files into dicom queue"
                                   .format(len(new_files))))
 
-                # Place each new file onto the queue
+                # Place each new file onto the queu
                 filtered_files = set(new_files)
 
 
@@ -401,7 +401,7 @@ class Volumizer(Finder):
 
         #whether or not we've updated instance_numbers_needed with dicom filter
         self.filtered = False
-
+        self.skipped_yet = False
         while self.is_alive:
 
             try:
@@ -470,6 +470,9 @@ class Volumizer(Finder):
                         if x % slices_per_volume in self.dicom_filter.legal_indices
                     ]
                     instance_numbers_needed = np.array(instance_numbers_needed)
+                    if not self.skipped_yet:
+                        instance_numbers_needed += slices_per_volume *2
+                        skipped_yet = True
                     self.filtered = True
 
             #If you really need to debug the dicom_filter...

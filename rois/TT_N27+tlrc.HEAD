@@ -1,0 +1,238 @@
+
+type = string-attribute
+name = HISTORY_NOTE
+count = 1325
+'[dglen@gollum.local: Wed Aug  1 13:46:01 2007] 3dcopy /Users/dglen/spm5/toolbox/Anatomy/colin27T1_seg.hdr ./MNIa_N27+tlrc\n[dglen@gollum.local: Wed Aug  1 13:46:01 2007] 3drefit -sublabel 0 colin27T1_seg MNIa_N27+tlrc\n[dglen@gollum.local: Wed Aug  1 13:46:02 2007] 3dcopy ./MNIa_N27+tlrc MNI_N27\n[dglen@gollum.local: Wed Aug  1 13:46:02 2007] 3drefit -dxorigin 0.000000 -dyorigin -4.000000 -dzorigin -5.000000 MNI_N27+tlrc\n[dglen@gollum.local: Wed Aug  1 13:46:02 2007] @Shift_Volume -MNI_Anat_to_MNI -dset MNIa_N27+tlrc -prefix MNI_N27\n[dglen@gollum.local: Wed Aug  1 13:46:03 2007] adwarp.c -resam Cu -force -apar /Users/dglen/afni/src/ZILLES_N27_ATLASES/N27/TT_N27+tlrc.HEAD -dpar MNI_N27+tlrc -prefix TT_N27\n[dglen@ndsl-lfmi-kocha.nih.gov: Thu Sep  9 14:00:34 2010] 3drefit -space TLRC /Users/dglen/abin/TT_EPI+tlrc.HEAD /Users/dglen/abin/TT_N27+tlrc.HEAD /Users/dglen/abin/TT_N27_CA_EZ_MPM+tlrc.HEAD /Users/dglen/abin/TT_N27_CA_EZ_PMaps+tlrc.HEAD /Users/dglen/abin/TT_N27_EZ_LR+tlrc.HEAD /Users/dglen/abin/TT_N27_EZ_ML+tlrc.HEAD /Users/dglen/abin/TT_avg152T1+tlrc.HEAD /Users/dglen/abin/TT_avg152T2+tlrc.HEAD /Users/dglen/abin/TT_icbm452+tlrc.HEAD /Users/dglen/abin/TTatlas+tlrc.HEAD\n[dglen@gollum.nimh.nih.gov: Fri May 11 13:23:44 2012] 3drefit -space TT_N27 /Volumes/elrond/pub/dist/atlases/current/TT_N27+tlrc.~
+
+type = string-attribute
+name = TYPESTRING
+count = 15
+'3DIM_HEAD_ANAT~
+
+type = string-attribute
+name = IDCODE_STRING
+count = 27
+'XYZ_8RjUZA_-GBen3pQPl0DbbA~
+
+type = string-attribute
+name = IDCODE_DATE
+count = 25
+'Wed Aug  1 13:46:03 2007~
+
+type = string-attribute
+name = IDCODE_ANAT_PARENT
+count = 27
+'XYZ_LM8H12QhqLrjFgOCSiCEVg~
+
+type = string-attribute
+name = IDCODE_WARP_PARENT
+count = 27
+'XYZ_LEvZO5nAfMrmswLnB75-9A~
+
+type = integer-attribute
+name = SCENE_DATA
+count = 8
+ 2 3 0 -999 -999
+ -999 -999 -999
+
+type = string-attribute
+name = LABEL_1
+count = 5
+'zyxt~
+
+type = string-attribute
+name = LABEL_2
+count = 5
+'zyxt~
+
+type = string-attribute
+name = DATASET_NAME
+count = 20
+'zyxt@Talairach View~
+
+type = integer-attribute
+name = ORIENT_SPECIFIC
+count = 3
+ 0 3 4
+
+type  = float-attribute
+name  = ORIGIN
+count = 3
+            -80            -80            -65
+
+type  = float-attribute
+name  = DELTA
+count = 3
+              1              1              1
+
+type  = float-attribute
+name  = IJK_TO_DICOM
+count = 12
+              1              0              0            -80              0
+              1              0            -80              0              0
+              1            -65
+
+type  = float-attribute
+name  = IJK_TO_DICOM_REAL
+count = 12
+              1              0              0            -80              0
+              1              0            -80              0              0
+              1            -65
+
+type = integer-attribute
+name = WARP_TYPE
+count = 8
+ 1 0 -999 -999 -999
+ -999 -999 -999
+
+type  = float-attribute
+name  = WARP_DATA
+count = 360
+      0.9444444              0              0              0      0.9976303
+     0.06880209              0    -0.05989829      0.8685252       1.058824
+             -0              0             -0      0.9976304    -0.07902943
+             -0      0.0688021       1.145927              0      -3.405704
+      -4.103033             -0       3.073374       4.936095          -9999
+          -9999              0              0              0         9999.9
+      0.9315069              0              0              0      0.9976303
+     0.06880209              0    -0.05989829      0.8685252       1.073529
+             -0              0             -0      0.9976304    -0.07902943
+             -0      0.0688021       1.145927              0      -3.405704
+      -4.103033             -0       3.073373       4.936095              0
+          -9999              0         9999.9              0         9999.9
+      0.9444444              0              0              0      0.8154033
+     0.05623471              0    -0.05989829      0.8685252       1.058824
+             -0              0             -0       1.220582    -0.07902944
+             -0     0.08417805       1.145927              0      -2.783618
+      -4.103033             -0       3.073373       4.936095          -9999
+              0              0              0             23         9999.9
+      0.9315069              0              0              0      0.8154033
+     0.05623471              0    -0.05989829      0.8685252       1.073529
+             -0              0             -0       1.220582    -0.07902943
+             -0     0.08417805       1.145927              0      -2.783618
+      -4.103033             -0       3.073373       4.936095              0
+              0              0         9999.9             23         9999.9
+      0.9444444              0              0              0      0.9511568
+     0.06559702              0    -0.05989829      0.8685252       1.058824
+             -0              0             -0       1.046375    -0.07902944
+             -0     0.07216377       1.145927              0      0.5821307
+      -4.103033             -0     -0.9333872       4.659767          -9999
+             23              0              0           9999         9999.9
+      0.9315069              0              0              0      0.9511568
+     0.06559702              0    -0.05989829      0.8685252       1.073529
+             -0              0             -0       1.046375    -0.07902943
+             -0     0.07216376       1.145927              0      0.5821307
+      -4.103033             -0     -0.9333871       4.659767              0
+             23              0         9999.9           9999         9999.9
+      0.9444444              0              0              0      0.9976303
+     0.06880209              0    -0.06148272      0.8914994       1.058824
+             -0              0             -0      0.9976304    -0.07699282
+             -0      0.0688021       1.116396              0      -3.405704
+      -4.211566             -0       3.073374       4.936095          -9999
+          -9999          -9999              0              0              0
+      0.9315069              0              0              0      0.9976303
+     0.06880209              0    -0.06148272      0.8914994       1.073529
+             -0              0             -0      0.9976304    -0.07699282
+             -0      0.0688021       1.116396              0      -3.405704
+      -4.211566             -0       3.073374       4.936094              0
+          -9999          -9999         9999.9              0              0
+      0.9444444              0              0              0      0.8154033
+     0.05623471              0    -0.06148272      0.8914994       1.058823
+             -0              0             -0       1.220582    -0.07699282
+             -0     0.08417805       1.116396              0      -2.783618
+      -4.211566             -0       3.073372       4.936094          -9999
+              0          -9999              0             23              0
+      0.9315069              0              0              0      0.8154033
+     0.05623471              0    -0.06148272      0.8914994       1.073529
+             -0              0             -0       1.220582    -0.07699282
+             -0     0.08417805       1.116396              0      -2.783618
+      -4.211566             -0       3.073372       4.936094              0
+              0          -9999         9999.9             23              0
+      0.9444444              0              0              0      0.9511568
+     0.06559702              0    -0.06148272      0.8914994       1.058824
+             -0              0             -0       1.046375    -0.07699282
+             -0     0.07216378       1.116396              0      0.5821307
+      -4.211566             -0     -0.9333872       4.659767          -9999
+             23          -9999              0           9999              0
+      0.9315069              0              0              0      0.9511568
+     0.06559702              0    -0.06148272      0.8914994       1.073529
+             -0              0             -0       1.046375    -0.07699282
+             -0     0.07216377       1.116396              0      0.5821307
+      -4.211566             -0     -0.9333872       4.659767              0
+             23          -9999         9999.9           9999              0
+
+type  = float-attribute
+name  = BRICK_STATS
+count = 2
+              0            222
+
+type = integer-attribute
+name = DATASET_RANK
+count = 8
+ 3 1 0 0 0
+ 0 0 0
+
+type = integer-attribute
+name = DATASET_DIMENSIONS
+count = 5
+ 161 191 151 0 0
+
+type = integer-attribute
+name = BRICK_TYPES
+count = 1
+ 0
+
+type  = float-attribute
+name  = BRICK_FLOAT_FACS
+count = 1
+              0
+
+type = string-attribute
+name = BRICK_LABS
+count = 14
+'colin27T1_seg~
+
+type = string-attribute
+name = BRICK_KEYWORDS
+count = 1
+'~
+
+type = string-attribute
+name = BYTEORDER_STRING
+count = 10
+'MSB_FIRST~
+
+type = integer-attribute
+name = NOTES_COUNT
+count = 1
+ 2
+
+type = string-attribute
+name = NOTE_NUMBER_001
+count = 76
+'TT_N27+tlrc is in AFNI TLRC Space. It contains the comp_lbls[4] atlas data.~
+
+type = string-attribute
+name = NOTE_DATE_001
+count = 25
+'Wed Aug  1 13:46:04 2007~
+
+type = string-attribute
+name = NOTE_NUMBER_002
+count = 1882
+'ANATOMY TOOLBOX \n Version 1.5 \n written by: \n Simon Eickhoff (s.eickhoff@fz-juelich.de) \n Institut for Medicine (IME) Research Center Juelich\n Phone + 49 2461-61-5219 / Fax + 49 2461-61-2820 \n References:\n Eickhoff SB et al.: A new SPM toolbox for combining probabilistic\n cytoarchitectonic maps and functional imaging data. (2005)\n NeuroImage 25 (4): 1325-1335\n Eickhoff SB et al.: Testing anatomically specified hypotheses in\n functional imaging using cytoarchitectonic maps. (2006)\n NeuroImage 32 (2): 570-82\n Eickhoff SB et al., Assignment of functional activations to\n probabilistic cytoarchitectonic areas revisited. (2007)\n NeuroImage 26 (3): 511-521\n Publications describing the included cytoarchitectonic maps:\n Auditory cortex TE 1.0, TE 1.1, TE 1.2---------------> Morosan et al., NeuroImage 2001\n Broca's area BA 44, BA 45----------------------------> Amunts et al., J Comp Neurol 1999\n Motor cortex BA 4a, BA 4p BA 6-----------------------> Geyer et al., Nature 1996\n -> S. Geyer, Springer press 2003\n Somatosensory cortex BA 3a, BA 3b, BA 1 BA 2---------> Geyer et al., NeuroImage, 1999, 2000\n -> Grefkes et al., NeuroImage 2001\n Parietal operculum / SII OP 1, OP 2, OP 3, OP 4------> Eickhoff et al., Cerebral Cortex 2006a,b\n Amygdala (CM/LB/SF) Hippocampus (FD/CA /SUB/EC/HATA)-> Amunts et al., Anat Embryol 2005 \n anterior intraparietal sulcus hIP1, hIP2-------------> Choi et al., J Comp Neurol 2006 \n Visual cortex BA 17, BA 18 hOC5----------------------> Amunts et al., NeuroImage 2000 \n -> Malikovic et al., Cerebral Cortex 2006\n Fiber tracts ar,cb,cing,ct,fom,iof,lgb,mb,mbg,or,slf,sof,uf -> Burgel et al., NeuroImage 1999, 2006\n All other areas may only be used with authors' permission ! \n \n \n AFNI adaptation by\n Ziad S. Saad (ziad@nih.gov, SSCC/NIMH/NIH)\n Info automatically created with CA_EZ_Prep.m based on se_note.m\n~
+
+type = string-attribute
+name = NOTE_DATE_002
+count = 25
+'Wed Aug  1 13:46:04 2007~
+
+type = string-attribute
+name = TEMPLATE_SPACE
+count = 7
+'TT_N27~
+
+type = integer-attribute
+name = INT_CMAP
+count = 1
+ 0

@@ -12,8 +12,10 @@ from rtfmri.feedback import Neurofeedback
                 # USER PARAMS
 #select the visualizer type:,1 = text, 2 = graph, 3 = thermometer
 VISUALIZER_KIND = 3
-TIMING_FILE     = 'test_data/10tr_rand_iti.1D'
-MASK_NAME       = 'test_data/naccpos.nii.gz'
+TIMING_FILE     = '10tr_rand_iti.1D'
+TIMING_TEXT     = {0: '', 1: 'Nacc Up', 2: 'Nacc Down'}
+MASK_NAME       = 'naccr.nii' #'ROI.finger_tapping.nii'
+BUFFER_SIZE     = 8 # How many trs to use in moving average for thermometer
 #================================================
 #
 # Choose file that specifies trial type per tr, where
@@ -24,15 +26,11 @@ MASK_NAME       = 'test_data/naccpos.nii.gz'
 if __name__ == '__main__':
 
     ### parameters for the actual scan.
-    # host="cnimr"
-    # port=22
+    host="cnimr"
+    port=22
     username=""
     password=""
     base_dir="/export/home1/sdc_image_pool/images"
-
-    host = "localhost"
-    port = 2124
-    base_dir = "test_data/test_dicoms"
 
 
     nf = Neurofeedback(hostname=host,
@@ -40,17 +38,18 @@ if __name__ == '__main__':
                        username=username,
                        password=password,
                        base_dir=base_dir, 
-                       width = 1000, height = 1000, 
+                       width = 1200, height = 1200, 
                        debug = True, 
-                       feedback = False)
+                       feedback = True,
+                       buffer_size=BUFFER_SIZE)
 
 
     # Choose the mask we'll need to use. when filter=True, we only get dicoms
     # that overlap with our ROI. Not necessary in practice on the scanner.
     nf.use_mask(MASK_NAME,
                 center=None,
-                radius=10,
-                use_filter=False)
+                radius=8,
+                use_filter=True)
 
     #if we use the newest and predict is true, we guess the next. Otherwise
     # we're working with old data.
@@ -62,8 +61,7 @@ if __name__ == '__main__':
     visualizers = {1:'text', 2:'graph', 3:'thermometer'}
     nf.init_visualizer(visualizer=visualizers[VISUALIZER_KIND])
 
-    timing_text = {0: '', 1: 'Raise the bar!', 2: 'Lower the bar'}
-    nf.set_timing(TIMING_FILE, timing_text, TR=2)
+    nf.set_timing(TIMING_FILE, TIMING_TEXT, TR=2)
 
     #start the scan...
-    nf.start_scan(dry_run=True)
+    nf.start_scan(dry_run=False)
