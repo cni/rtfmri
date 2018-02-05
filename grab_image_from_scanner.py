@@ -1,7 +1,5 @@
 #! /usr/bin/env python
-"""Retrieve an image from a specific series in the current exam.
-I received the original code for this from Matt Sacchet, but someone else
-is the author let me know - nb"""
+"""Retrieve an image from a specific series in the current exam."""
 from __future__ import print_function
 import sys
 import optparse
