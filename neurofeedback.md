@@ -14,7 +14,7 @@ Given a native space ROI nifti, edit the neurofeedback.py script to point to the
 
 # The neurofeedback script. 
 
-At present, the main mechanism for neurofeedback is a Theremometer visualizer. 
+At present, the main mechanism for neurofeedback is a Thermometer visualizer. 
 
 ```
 BUFFER_SIZE     = 8 # How many trs to use in moving average for thermometer
