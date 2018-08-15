@@ -86,7 +86,9 @@ class ScannerInterface(object):
 
         return self.use_series(newest_series)
 
-
+    def use_timing_vec(self, vec):
+        self.dicom_finder.use_vec(vec)
+        self.volumizer.use_vec(vec)
 
     def use_series(self, series):
         with self.dicom_finder.series_q.mutex:

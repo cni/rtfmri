@@ -30,6 +30,7 @@ def _get_device(user_os):
         raise Exception("Not tested on windows.")
     else:
          device = '/dev/ttyACM0'
+    return device
 
 def start_scan(user_os='linux'):
     """Send the start scan trigger to the scanner."""

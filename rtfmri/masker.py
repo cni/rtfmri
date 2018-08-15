@@ -1,7 +1,7 @@
 """Classes to handle ROI masks and dicom selection based on them"""
 from __future__ import print_function
 import time
-import os
+import os, pdb
 from threading import Lock
 from collections import OrderedDict
 
@@ -12,7 +12,6 @@ from nilearn.input_data import NiftiMasker
 from scipy.ndimage import measurements, interpolation
 
 from utilities import alphanum_key
-
 
 
 class Masker(object):
@@ -179,14 +178,16 @@ class DicomFilter(object):
         reduced = (parts[-2] * 1000 + parts[-1]) - self.reduced_first_name
 
         # instead, on the scanner we use the raw instance number:
-        reduced = parts[-1]
+        #reduced = parts[-1]
 
         return int(reduced)
 
-    def filter(self, paths):
+
+    def filter(self, paths, timing_vec=None):
         """
         Given a list of paths to names, return only the legal ones that contain
         slices that we want.
+        If timing vec is passed, we skip volumes that don't have a zero in them.
 
         Example: Filenames are 1000, 1001, 1002, 1003, 1004...
         There are 40 slices per volume.
@@ -202,14 +203,20 @@ class DicomFilter(object):
         # reduce to (0,40) ..(39,79) for sorting
         rn = [(x[0], self.reduce_name(x[1])) for x in enumerate(rn)]
 
-        # reduce to (0, 1)... (39,39) for filtering
-        rn = [(x[0], 1 + ((x[1] - 1) % self.slices_per_volume)) for x in rn]
+        # reduce (0index dicom num, 1 index slice num, 0 index TR num)
+        rn = [(x[0], 1 + ((x[1]) % self.slices_per_volume), (x[1])//self.slices_per_volume) for x in rn]
 
         # now remove all illegal ones
         rn = [x for x in rn if x[1] in self.legal_indices]
 
+        #now check agains the timing vec if present
+        if timing_vec is not None:
+            skip_trs = [x[0] for x in enumerate(timing_vec) if x[1] == 0 and x[0] > 10]
+            rn = [ x for x in rn if x[2]  not in skip_trs]
+
         filtered = [paths[x[0]] for x in rn]
+
         ordered_set = OrderedDict()
         for x in filtered:
             ordered_set[x] = True
-        return ordered_set
+        return list(ordered_set)

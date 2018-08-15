@@ -172,6 +172,9 @@ class DicomFinder(Finder):
         self.total_time_dicom_retrival = 0
         self.dicom_filter = None
 
+    def use_vec(self, vec):
+        self.vec = vec
+
     #@profile
     def run(self):
         """This function gets looped over repeatedly while thread is alive."""
@@ -196,10 +199,16 @@ class DicomFinder(Finder):
                         print("No dicoms left, halting...")
                         self.halt()
 
-                # If we only want get certain slices, then assuming
-                # we have a legal list we need to check
+
                 if self.dicom_filter is not None and self.dicom_filter.fitted:
-                    new_files = self.dicom_filter.filter(new_files)
+                    # pass in the timing vec
+                    vec = None
+                    try:
+                        vec = self.vec
+                    except AttributeError:
+                        pass
+
+                    new_files = self.dicom_filter.filter(new_files, vec)
 
                 if new_files:
                     files_to_enqueue = min(50, len(new_files))
@@ -213,12 +222,9 @@ class DicomFinder(Finder):
 
                 for fname in new_files:
                     # do not fetch unwanted files if using a dicom filter.
-                    if fname not in filtered_files:
-                        continue
 
                     if not self.is_alive:
                         break
-
 
                     dcm = self.client.retrieve_dicom(fname)
                     self.last_dicom_time = time.time()
@@ -279,10 +285,10 @@ class Volumizer(Finder):
         # The external queue objects we are talking to
         self.dicom_q = dicom_q
         self.volume_q = volume_q
-        
+
         self.n_dicoms_dequeued = 0
         self.n_volumes_queued = 0
-       
+
 
         self.total_dequeue_time = 0
         self.total_assembly_time = 0
@@ -293,6 +299,11 @@ class Volumizer(Finder):
         self.last_assembled_time = time.time()
 
         self.dicom_filter = None
+        self.skip_trs = []
+
+    def use_vec(self, vec):
+        self.vec = vec
+        self.skip_trs = [x[0] for x in enumerate(vec) if x[1] == 0 and x[0] > 10]
 
     def dicom_esa(self, dcm):
         """Extract the exam, series, and acquisition metadata.
@@ -327,14 +338,14 @@ class Volumizer(Finder):
         meta['SliceLocation'] = dcm[(0x0020, 0x1041)].value
         meta['InStackPositionNumber'] = dcm[(0x0020, 0x9057)].value
         meta['LargestImagePixelValue'] = dcm[(0x0028, 0x0107)].value
-        meta['WindowCenter'] = dcm[(0x0028, 0x1050)].value
+        meta['WindowCeNter'] = dcm[(0x0028, 0x1050)].value
         meta['WindowWidth'] = dcm[(0x0028, 0x1051)].value
         meta['TriggerTime'] = dcm[(0x0018, 0x1060)].value
 
         # Potentially useful for future debugging...:
-        #echo = dcm[(0x0018, 0x0086)].value
-        #tpid = dcm[(0x0020, 0x0100)].value
-        #print(meta['InstanceNumber'],tpid, meta['InStackPositionNumber'],
+        # echo = dcm[(0x0018, 0x0086)].value
+        # tpid = dcm[(0x0020, 0x0100)].value
+        # print(meta['InstanceNumber'],tpid, meta['InStackPositionNumber'],
         #      meta['TriggerTime'], meta['SliceLocation'],
         #      meta['ContentTime'], meta['SOPInstanceUID'])
 
@@ -456,7 +467,6 @@ class Volumizer(Finder):
             current_slice = int(dcm.InstanceNumber)
 
             # Add this slice index and dicom object to current list
-
             instance_numbers_gathered.append(current_slice)
 
             current_slices.append(dcm)
@@ -500,7 +510,6 @@ class Volumizer(Finder):
                                       max(instance_numbers_needed))))
                 tic = time.time()
                 volume = self.assemble_volume(volume_slices)
-                time.sleep(1)
 
                 # Put that object on the dicom queue
                 self.volume_q.put(volume, timeout=self.interval)
@@ -510,3 +519,10 @@ class Volumizer(Finder):
 
                 # Update the array of slices we need for the next volume
                 instance_numbers_needed += slices_per_volume
+                while instance_numbers_needed[0]//slices_per_volume in self.skip_trs:
+                    instance_numbers_needed += slices_per_volume
+
+
+
+
+
