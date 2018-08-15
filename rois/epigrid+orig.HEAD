@@ -1,0 +1,134 @@
+
+type = string-attribute
+name = HISTORY_NOTE
+count = 243
+'[cniuser@voxel2.stanford.edu: Wed Aug  9 11:45:23 2017] {AFNI_17.2.02:linux_openmp_64} 3dcopy epigrid.nii.gz epigrid+orig\n[cniuser@voxel2.stanford.edu: Wed Aug  9 11:45:31 2017] {AFNI_17.2.02:linux_openmp_64} 3drefit -space orig epigrid+orig~
+
+type = string-attribute
+name = TYPESTRING
+count = 15
+'3DIM_HEAD_ANAT~
+
+type = string-attribute
+name = IDCODE_STRING
+count = 27
+'XYZ_ldUvHnRwYrm3Vim67MmsNQ~
+
+type = string-attribute
+name = IDCODE_DATE
+count = 25
+'Wed Aug  9 11:45:23 2017~
+
+type = integer-attribute
+name = SCENE_DATA
+count = 8
+ 0 2 0 -999 -999
+ -999 -999 -999
+
+type = string-attribute
+name = LABEL_1
+count = 5
+'zyxt~
+
+type = string-attribute
+name = LABEL_2
+count = 5
+'zyxt~
+
+type = string-attribute
+name = DATASET_NAME
+count = 5
+'zyxt~
+
+type = integer-attribute
+name = ORIENT_SPECIFIC
+count = 3
+ 0 2 4
+
+type  = float-attribute
+name  = ORIGIN
+count = 3
+       -116.499          94.55      -108.4792
+
+type  = float-attribute
+name  = DELTA
+count = 3
+            2.9           -2.9            2.9
+
+type  = float-attribute
+name  = IJK_TO_DICOM
+count = 12
+            2.9              0              0       -116.499              0
+           -2.9              0          94.55              0              0
+            2.9      -108.4792
+
+type  = float-attribute
+name  = IJK_TO_DICOM_REAL
+count = 12
+            2.9              0              0       -116.499              0
+           -2.9              0          94.55              0              0
+            2.9      -108.4792
+
+type  = float-attribute
+name  = BRICK_STATS
+count = 10
+              0          13382              0          12669              0
+          12661              0          12653              0          12645
+
+type = integer-attribute
+name = TAXIS_NUMS
+count = 8
+ 5 0 77002 -999 -999
+ -999 -999 -999
+
+type  = float-attribute
+name  = TAXIS_FLOATS
+count = 8
+              0              2              0              0              0
+        -999999        -999999        -999999
+
+type = integer-attribute
+name = DATASET_RANK
+count = 8
+ 3 5 0 0 0
+ 0 0 0
+
+type = integer-attribute
+name = DATASET_DIMENSIONS
+count = 5
+ 80 80 46 0 0
+
+type = integer-attribute
+name = BRICK_TYPES
+count = 5
+ 1 1 1 1 1
+
+type  = float-attribute
+name  = BRICK_FLOAT_FACS
+count = 5
+              0              0              0              0              0
+
+type = string-attribute
+name = TEMPLATE_SPACE
+count = 5
+'orig~
+
+type = integer-attribute
+name = INT_CMAP
+count = 1
+ 0
+
+type = string-attribute
+name = BYTEORDER_STRING
+count = 10
+'LSB_FIRST~
+
+type = string-attribute
+name = BRICK_LABS
+count = 15
+'#0~#1~#2~#3~#4~
+
+type = string-attribute
+name = BRICK_KEYWORDS
+count = 5
+'~~~~~

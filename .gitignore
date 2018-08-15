@@ -41,3 +41,5 @@ new_test_data
 emily*
 *.nii
 *.nii.gz
+.DS_Store
+.DS_Store

@@ -14,6 +14,10 @@ from rtfmri.feedback import Neurofeedback
 VISUALIZER_KIND = 1
 TIMING_FILE     = 'test_data/10tr_rand_iti.1D'
 MASK_NAME       = 'test_data/naccpos.nii.gz'
+TIMING_FILE     = '10tr_rand_iti.1D'
+TIMING_TEXT     = {0: '', 1: 'Nacc Up', 2: 'Nacc Down'}
+MASK_NAME       = 'naccr.nii' #'ROI.finger_tapping.nii'
+BUFFER_SIZE     = 8 # How many trs to use in moving average for thermometer
 #================================================
 #
 # Choose file that specifies trial type per tr, where
@@ -24,25 +28,22 @@ MASK_NAME       = 'test_data/naccpos.nii.gz'
 if __name__ == '__main__':
 
     ### parameters for the actual scan.
-    # host="cnimr"
-    # port=22
+    host="cnimr"
+    port=22
     username=""
     password=""
     base_dir="/export/home1/sdc_image_pool/images"
-
-    host = "localhost"
-    port = 2124
-    base_dir = "test_data/test_dicoms"
 
 
     nf = Neurofeedback(hostname=host,
                        port=port,
                        username=username,
                        password=password,
-                       base_dir=base_dir,
-                       width = 1000, height = 1000,
-                       debug = True,
-                       feedback = False)
+                       base_dir=base_dir, 
+                       width = 1200, height = 1200, 
+                       debug = True, 
+                       feedback = True,
+                       buffer_size=BUFFER_SIZE)
 
 
 
@@ -66,6 +67,5 @@ if __name__ == '__main__':
     visualizers = {1:'text', 2:'graph', 3:'thermometer'}
     nf.init_visualizer(visualizer=visualizers[VISUALIZER_KIND])
 
-
     #start the scan...
-    nf.start_scan(dry_run=True)
+    nf.start_scan(dry_run=False)

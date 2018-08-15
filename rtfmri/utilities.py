@@ -32,13 +32,13 @@ def _get_device(user_os):
          device = '/dev/ttyACM0'
     return device
 
-def start_scan(user_os='linux'):
+def start_scanner(user_os='linux'):
     """Send the start scan trigger to the scanner."""
 
     device = _get_device(user_os)
 
     if not os.path.exists(device):
-        sys.stderr.write("ERROR: Serial device %r not found!\n\n" % (device,))
+        sys.stderr.write("ERROR: Serial device %r not found!\n\n" % (device))
         return 1
 
     ser = serial.Serial(device, 115200, timeout=1)
