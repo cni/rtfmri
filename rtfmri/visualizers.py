@@ -77,7 +77,6 @@ class RoiVisualizer(Visualizer):
         self.roi_tc = []
         self.n_volumes_reduced = 0
         self.TR = 2
-        self.ortho_tcs = [[] for x in self.masker.orthogonals]
         self.detrended = []
         self.total_masking_time = 0
 
@@ -88,6 +87,12 @@ class RoiVisualizer(Visualizer):
     def current_tr(self):
         return int((time.time() - self.start) // self.TR)
 
+    def set_regressors(self, vec, text, TR=2):
+        """At each TR, if vec has value x, display text[x] on screen"""
+        self.timing_vector = [int(x) for x in vec]
+        self.text = text
+        self.TR = TR
+        
     def log_times(self):
         n = len(self.roi_tc)
         toc = time.time()
@@ -271,11 +276,9 @@ class Thermometer(PyGameVisualizer):
 
         temp = 50 + 15 * ((self.state - mean) / std) for a buffer
     """
-
-    def __init__(self, interface, masker, buffer_size=8, feedback=True, 
+    def __init__(self, data_manager, buffer_size=8, feedback=True, 
                  timeout=0, debug=False):
-        super(Thermometer, self).__init__(interface, masker, timeout, debug)
-
+        super(Thermometer, self).__init__(data_manager, timeout, debug)
         self.temp = 50
         self.max_move = 100
         self.feedback = feedback
@@ -288,7 +291,7 @@ class Thermometer(PyGameVisualizer):
         center_x = (w - width) // 2
         return (center_x, center_y)
 
-   @property
+    @property
     def width(self):
         w, _ = self.screen.get_size()
         return (w * .1) // 1

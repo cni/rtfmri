@@ -90,8 +90,10 @@ class Neurofeedback(object):
             v = GraphVisualizer(self.data_manager)
 
         if visualizer=='thermometer':
-            v = Thermometer(interface, self.masker, debug=self.debug, 
-                feedback=self.feedback, buffer_size=self.buffer_size)
+            v = Thermometer(self.data_manager,
+                            debug=self.debug, 
+                            feedback=self.feedback,
+                            buffer_size=self.buffer_size)
             v.start_display(width = self.width, height=self.height)
 
         v.set_regressors(vec = self.vec, text=self.timing_texts, TR=self.TR)

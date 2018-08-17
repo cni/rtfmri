@@ -11,12 +11,12 @@ from rtfmri.feedback import Neurofeedback
 #================================================
                 # USER PARAMS
 #select the visualizer type:,1 = text, 2 = graph, 3 = thermometer
-VISUALIZER_KIND = 1
+VISUALIZER_KIND = 3
 TIMING_FILE     = 'test_data/10tr_rand_iti.1D'
 MASK_NAME       = 'test_data/naccpos.nii.gz'
 TIMING_FILE     = '10tr_rand_iti.1D'
 TIMING_TEXT     = {0: '', 1: 'Nacc Up', 2: 'Nacc Down'}
-MASK_NAME       = 'naccr.nii' #'ROI.finger_tapping.nii'
+#MASK_NAME       = 'naccr.nii' #'ROI.finger_tapping.nii'
 BUFFER_SIZE     = 8 # How many trs to use in moving average for thermometer
 #================================================
 #
@@ -30,9 +30,11 @@ if __name__ == '__main__':
     ### parameters for the actual scan.
     host="cnimr"
     port=22
+    host='localhost'
+    port=2124
     username=""
     password=""
-    base_dir="/export/home1/sdc_image_pool/images"
+    base_dir="test_data/test_dicoms"
 
 
     nf = Neurofeedback(hostname=host,

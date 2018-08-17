@@ -200,6 +200,7 @@ class DicomFilter(object):
         # first take just the filenames. say we start with 1040...1079
         rn = [os.path.split(x)[-1] for x in paths]
 
+        #pdb.set_trace()
         # reduce to (0,40) ..(39,79) for sorting
         rn = [(x[0], self.reduce_name(x[1])) for x in enumerate(rn)]
 
