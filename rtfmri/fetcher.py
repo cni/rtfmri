@@ -1,5 +1,4 @@
-"""A class to fetch sessions from a scanner and compile them to niftii files.
-   Thanks to Matt Sacchet for providing some of the original code. """
+"""A class to fetch sessions from a scanner and compile them to niftii files."""
 from __future__ import print_function
 import warnings
 from pprint import pprint as pp

@@ -1,6 +1,6 @@
 """The script to start neurofeedback--it should even start the scan!"""
 from __future__ import print_function
-
+import pprint
 import re
 import pdb
 import time
@@ -21,7 +21,7 @@ class Neurofeedback(object):
 
     def __init__(self, hostname='cnimr', port=22, username='', password='',
                  base_dir="/export/home1/sdc_image_pool/images",
-                 buffer_size = 8, use_analyzer=False, width=1000, height=1000, 
+                 buffer_size = 8, use_analyzer=False, width=1000, height=1000,
                  debug=False, feedback = True):
         # Pass the default credentials to connect to the test FTP server.
         # We also pass a dcm filter in order to only load needed dicoms
@@ -91,7 +91,7 @@ class Neurofeedback(object):
 
         if visualizer=='thermometer':
             v = Thermometer(self.data_manager,
-                            debug=self.debug, 
+                            debug=self.debug,
                             feedback=self.feedback,
                             buffer_size=self.buffer_size)
             v.start_display(width = self.width, height=self.height)
@@ -126,7 +126,7 @@ class Neurofeedback(object):
         self.visualizer.start_timer()
         self.data_manager.start_timer()
 
-        #pdb.set_trace()
+
         #Now wait for the session we want to appear
         if not client.path_exists(self.series):
             print("Waiting for dicoms to appear...")
@@ -137,23 +137,23 @@ class Neurofeedback(object):
 
         #start the interface
         self.data_manager.start_interface()
-
         self.data_manager.run()
 
         #start the visualizer
+
         self.visualizer.run()
 
 
 class FeedbackDataManager(object):
-    # Object that manages the current feedback session's fmri data, independent 
-    # of the display. 
+    # Object that manages the current feedback session's fmri data, independent
+    # of the display.
 
     def __init__(self, interface, masker, interval=0):
         super(FeedbackDataManager, self).__init__()
-
-        self.brain_data = {}
-        self.thread = FeedbackDataThread(interface, masker, self.brain_data, interval)
+        self.brain_data_queue = Queue()
+        self.thread = FeedbackDataThread(interface, masker, self.brain_data_queue, interval)
         self.interface = interface
+        self.roi_state = 0
 
     def start_interface(self):
         self.interface.start()
@@ -161,15 +161,16 @@ class FeedbackDataManager(object):
     def start_timer(self):
         self.thread.start_timer()
 
-    @property
-    def current_tr(self):
-        return int((time.time() - self.start) // self.TR)
-
     def run(self):
-        self.thread.run()
+        self.thread.start()
 
     def get_state(self):
-        return self.brain_data
+        try:
+            self.roi_state = self.brain_data_queue.get()
+        except Empty:
+            pass
+        return self.roi_state
+
 
     def halt(self):
         """Make it so the thread will halt within a run method."""
@@ -179,28 +180,19 @@ class FeedbackDataManager(object):
 class FeedbackDataThread(Thread):
     # Thread that manages the current feedback session's fmri data
 
-    def __init__(self, interface, masker, brain_data, interval=0):
+    def __init__(self, interface, masker, brain_data_q, interval=0.001):
         super(FeedbackDataThread, self).__init__()
-
-        self.brain_data = brain_data
-
+        self.brain_data_q = brain_data_q
         self.daemon = True
         self.stop_event = Event()
-
         self.interface = interface
         self.masker = masker
         self.interval = interval
-
-        self.roi_tc = []
         self.n_volumes_reduced = 0
         self.TR = 2
-        self.ortho_tcs = [[] for x in self.masker.orthogonals]
-        self.detrended = []
-        self.total_masker_roi_average_time = 0
-
-        self.brain_data['state'] = 0
-
-
+        self.total_get_and_reduce_time = 0
+        self.total_reduce_time = 0
+        self.total_get_time = 0
 
     def halt(self):
         """Make it so the thread will halt within a run method."""
@@ -211,105 +203,60 @@ class FeedbackDataThread(Thread):
         return not self.stop_event.is_set()
 
     def start_timer(self):
-        self.start = time.time()
-        self.last_reduced_time = self.start
+        self.start_time = time.time()
+        self.last_reduced_time = self.start_time
 
     @property
     def current_tr(self):
-        return int((time.time() - self.start) // self.TR)
+        return int((time.time() - self.start_time) // self.TR)
 
 
     def run(self):
+        print("running the thread")
         while self.is_alive:
-            tic = time.time()
             self.get_and_reduce_volume()
 
     def get_and_reduce_volume(self):
-
+        start_get = time.time()
         vol = self.interface.get_volume()
-
-        self.n_volumes_reduced += 1
-        tic = time.time()
+        end_get = time.time()
         roi_mean = self.masker.reduce_volume(vol)
-        self.total_masker_roi_average_time += (time.time() - tic)
-
-        self.roi_tc.append(roi_mean)
+        end_reduce = time.time()
+        self.n_volumes_reduced += 1
+        self.total_get_and_reduce_time += end_reduce - start_get
+        self.total_reduce_time += end_reduce - end_get
+        self.total_get_time += end_get - start_get
+        self.brain_data_q.put(roi_mean)
         self.log_times()
+        self.last_reduced_time = end_reduce
 
-        if self.masker.use_orthogonal:
-            ortho_means = self.masker.get_orthogonals(vol)
-            for i, mean in enumerate(ortho_means):
-                self.ortho_tcs[i].append(mean)
-            # if len(self.roi_tc) > 3:
-            #     detrended = self.detrend()
-            #     print(np.corrcoef(detrended[:,0], self.roi_tc[2:]))
-            #     roi_mean = detrended[-1,0]
-            #     self.detrended = detrended[:,0]
-
-        self.brain_data['roi_tc'] = self.roi_tc
-
-    def get_state(self):
-        return self.state
-
-    def detrend(self):
-        # make a timepoint x num roi matrix and take pcs[].
-        tcs = [self.roi_tc]
-        for x in self.ortho_tcs:
-            tcs.append(x)
-        #leave out the noise of the first two time points
-        tcm = np.transpose(np.array(tcs))[2:, :]
-
-        #transform onto pcs
-        pca = decomp.PCA()
-        pca.fit(tcm)
-        tf = pca.transform(tcm)
-
-        # ica = decomp.FastICA()
-        # ica.fit(tcm)
-        # tf = ica.transform(tcm)
-
-        return tf
 
     def log_times(self):
-        n = len(self.roi_tc)
-        toc = time.time()
-        start_diff = toc - self.start
-        last_diff  = toc - self.last_reduced_time
-        volume_collected = self.start + self.n_volumes_reduced * self.TR - 2
-        lag = toc - volume_collected
+        start_diff = time.time() - self.start_time
+        last_diff = time.time() - self.last_reduced_time
+        volume_collected_tail = self.start_time + self.n_volumes_reduced * self.TR
+        lag = time.time() - volume_collected_tail
 
         try:
             avg_retrival = self.interface.dicom_finder.total_time_dicom_retrival / self.interface.dicom_finder.n_dicoms_queued
             avg_dequeue = self.interface.volumizer.total_dequeue_time / self.interface.volumizer.n_dicoms_dequeued
             avg_assembly = self.interface.volumizer.total_assembly_time / self.interface.volumizer.n_volumes_queued
-            avg_roi = self.total_masker_roi_average_time / self.n_volumes_reduced
-            avg_rda = 46 * (avg_retrival + avg_dequeue) + avg_assembly + avg_roi
+            avg_get_time = self.total_get_time / self.n_volumes_reduced
+            avg_mask_time = self.total_reduce_time / self.n_volumes_reduced            
         except ZeroDivisionError:
             return
 
-        self.last_time = toc
         print("============== TIMING ===================")
         print("Display Volume/Scanner Volume: {}/{}".format(self.n_volumes_reduced, self.current_tr))
         print("Lag since collection: {}".format(lag))
         print ('')
         print("Time since start: {}".format(start_diff ))
         print("Time since last: {}".format(last_diff))
-        print("Average since start: {}".format(start_diff/n))
+        print("Average since start: {}".format(start_diff/self.n_volumes_reduced))
         print("***************** STATS *****************")
         print("*** Average DCM Retrival: {}".format(avg_retrival))
         print("*** Average DCM Dequeue: {}".format(avg_dequeue))
         print("*** Average Volume Assembly: {}".format(avg_assembly))
-        print("*** Average Mask Average: {}".format(avg_roi))
-        print("*** Average Retrival/Dequeue/Assembly/Mask (46 dicoms): {}".format(avg_rda))
+        print("*** Average Volume Dequeue Time: {}".format(avg_get_time))        
+        print("*** Average Reduce Time: {}".format(avg_mask_time))
         print("========================================")
-
-
-
-
-
-
-
-
-
-
-

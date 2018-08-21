@@ -11,7 +11,7 @@ from rtfmri.feedback import Neurofeedback
 #================================================
                 # USER PARAMS
 #select the visualizer type:,1 = text, 2 = graph, 3 = thermometer
-VISUALIZER_KIND = 3
+VISUALIZER_KIND = 1
 TIMING_FILE     = 'test_data/10tr_rand_iti.1D'
 MASK_NAME       = 'test_data/naccpos.nii.gz'
 TIMING_FILE     = '10tr_rand_iti.1D'
@@ -47,8 +47,6 @@ if __name__ == '__main__':
                        feedback = True,
                        buffer_size=BUFFER_SIZE)
 
-
-
     # Choose the mask we'll need to use. when filter=True, we only get dicoms
     # that overlap with our ROI. Not necessary in practice on the scanner.
     nf.use_mask(MASK_NAME,
@@ -70,4 +68,4 @@ if __name__ == '__main__':
     nf.init_visualizer(visualizer=visualizers[VISUALIZER_KIND])
 
     #start the scan...
-    nf.start_scan(dry_run=False)
+    nf.start_scan(dry_run=True)

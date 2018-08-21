@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 
 
 logger = logging.getLogger(__name__)
-
+logger.setLevel(logging.DEBUG)
 
 class Visualizer(object):
     """Given an data_manager that gives you state data,
@@ -27,6 +27,7 @@ class Visualizer(object):
         self.timeout = timeout
         self.alive = True
         self.setup_exit()
+        self.state_history = []
 
     def setup_exit(self):
         signal.signal(signal.SIGINT, self.exit_gracefully)
@@ -40,18 +41,13 @@ class Visualizer(object):
         """Gather new information from the data_manager, ie get state"""
         return self.data_manager.get_state()
 
-    def update_state(self):
-        """Any visualizer will need a function to update its internal
-           representation of the data it's gathering from the data_manager"""
-        self.state = self.data_manager.get_state()
-
-
     def draw(self):
         """ Function to actually handle updating the screen"""
         pass
 
     def run(self):
         """structure of main run"""
+        logger.debug("running visualizer")
         while self.alive:
             self.update_state()
             self.draw()
@@ -65,21 +61,6 @@ class Visualizer(object):
     def __del__(self):
         self.halt()
 
-
-class RoiVisualizer(Visualizer):
-    """Class that assumes you want to use a masking object"""
-
-    def __init__(self, interface, masker, timeout=0):
-
-        super(RoiVisualizer, self).__init__(interface, timeout)
-        self.masker = masker
-        # keep track of the ROI's information over time.
-        self.roi_tc = []
-        self.n_volumes_reduced = 0
-        self.TR = 2
-        self.detrended = []
-        self.total_masking_time = 0
-
     def start_timer(self):
         self.start = time.time()
 
@@ -87,89 +68,24 @@ class RoiVisualizer(Visualizer):
     def current_tr(self):
         return int((time.time() - self.start) // self.TR)
 
-    def set_regressors(self, vec, text, TR=2):
-        """At each TR, if vec has value x, display text[x] on screen"""
-        self.timing_vector = [int(x) for x in vec]
-        self.text = text
-        self.TR = TR
-        
-    def log_times(self):
-        n = len(self.roi_tc)
-        toc = time.time()
-        start_diff = toc - self.start
-        last_diff  = toc - self.last_time
-        volume_collected = self.start + self.n_volumes_reduced * self.TR - 2
-        lag = toc - volume_collected
-
-        try:
-            avg_retrival = self.interface.dicom_finder.total_time_dicom_retrival / self.interface.dicom_finder.n_dicoms_queued
-            avg_dequeue = self.interface.volumizer.total_dequeue_time / self.interface.volumizer.n_dicoms_dequeued
-            avg_assembly = self.interface.volumizer.total_assembly_time / self.interface.volumizer.n_volumes_queued
-            avg_roi = self.total_masking_time / self.n_volumes_reduced
-            avg_rda = 46 * (avg_retrival + avg_dequeue) + avg_assembly + avg_roi
-        except ZeroDivisionError:
-            return
-
-        self.last_time = toc
-        print("============== TIMING ===================")
-        print("Display Volume/Scanner Volume: {}/{}".format(self.n_volumes_reduced, self.current_tr))
-        print("Lag since collection: {}".format(lag))
-        print ('')
-        print("Time since start: {}".format(start_diff ))
-        print("Time since last: {}".format(last_diff))
-        print("Average since start: {}".format(start_diff/n))
-        print("***************** STATS *****************")
-        print("*** Average DCM Retrival: {}".format(avg_retrival))
-        print("*** Average DCM Dequeue: {}".format(avg_dequeue))
-        print("*** Average Volume Assembly: {}".format(avg_assembly))
-        print("*** Average Mask Average: {}".format(avg_roi))
-        print("*** Average Retrival/Dequeue/Assembly/Mask (46 dicoms): {}".format(avg_rda))
-        print("========================================")
-
-
     def update_state(self):
-        logger.debug("Attempting to fetch volume...")
-        
-        try:
-            vol = self.get_volume(False)
-        except Empty:
-            logger.debug("failed to fetch volume, empty queue...")
-            return
+        logger.debug("Visualizer attempting to fetch volume...")
+        state = self.get_state()
+        self.state_history.append(state)
+        self.state = state
 
-        self.n_volumes_reduced += 1
-        tic = time.time()
-        roi_mean = self.masker.reduce_volume(vol)
-        self.total_masking_time += (time.time() - tic)
-        self.roi_tc.append(roi_mean)
-        self.state = roi_mean
+    def set_regressors(self, vec, text, TR):
+        self.timing_vector = [int(x) for x in vec]
+        self.timing_text = text
+        self.TR = TR
 
-    def detrend(self):
-        # These are strictly experimental, and didn't seem to work all that well, 
-        # but are left here if you want to edit. 
-        # make a timepoint x num roi matrix and take pcs[].
-        tcs = [self.roi_tc]
-        for x in self.ortho_tcs:
-            tcs.append(x)
-        #leave out the noise of the first two time points
-        tcm = np.transpose(np.array(tcs))[2:, :]
-
-        #transform onto pcs
-        pca = decomp.PCA()
-        pca.fit(tcm)
-        tf = pca.transform(tcm)
-
-        return tf
-
-class TextVisualizer(RoiVisualizer):
+class TextVisualizer(Visualizer):
 
     """
     Most basic "visualizer". Prints out the newest ROI value (raw)
     """
     def draw(self):
-
-        print(self.roi_tc)
-
-        self.log_times()
+        print(self.state_history)
 
 class GraphVisualizer(Visualizer):
     """
@@ -182,12 +98,11 @@ class GraphVisualizer(Visualizer):
         self.tic = time.time()
 
     def draw(self):
-        n = len(self.roi_tc)
+        n = len(self.state_history)
         x = range(1, n)
         y = []
         if n > 1:
-            y = self.roi_tc[1:]
-        self.log_times()
+            y = self.state_history[1:]
         plt.plot(x, y)
 
         plt.xlabel('time (s)')
@@ -200,7 +115,7 @@ class GraphVisualizer(Visualizer):
 
 
 
-class PyGameVisualizer(RoiVisualizer):
+class PyGameVisualizer(Visualizer):
     """ Handle pygame setup"""
 
     def __init__(self, data_manager, timeout=0, debug=False):
@@ -224,6 +139,7 @@ class PyGameVisualizer(RoiVisualizer):
             pygame.quit()
             self.pygame_live = False
 
+
     def start_display(self, width=640, height=500, title='nrfdbk'):
         self.pygame_live = True
         pygame.init()
@@ -246,7 +162,7 @@ class PyGameVisualizer(RoiVisualizer):
 
     @property
     def current_message(self):
-        return self.text[self.timing_vector[self.current_tr]]
+        return self.timing_text[self.timing_vector[self.current_tr]]
 
 
     @property
@@ -265,7 +181,7 @@ class PyGameVisualizer(RoiVisualizer):
 
         w,h = self.screen.get_size()
         y = h//15 if feedback else None
-        self.center_text(self.text[self.timing_vector[self.current_tr]], y=y)
+        self.center_text(self.timing_text[self.timing_vector[self.current_tr]], y=y)
 
 
 
@@ -276,7 +192,7 @@ class Thermometer(PyGameVisualizer):
 
         temp = 50 + 15 * ((self.state - mean) / std) for a buffer
     """
-    def __init__(self, data_manager, buffer_size=8, feedback=True, 
+    def __init__(self, data_manager, buffer_size=8, feedback=True,
                  timeout=0, debug=False):
         super(Thermometer, self).__init__(data_manager, timeout, debug)
         self.temp = 50
@@ -310,25 +226,27 @@ class Thermometer(PyGameVisualizer):
 
     def draw_stats(self):
         # Prints statistics at the bottom of screen for debugging
-        last_volume_collection_finished = self.start + self.n_volumes_reduced * self.TR
-        lag = time.time() - last_volume_collection_finished
+        # these need to be updated for skipping trs
+        # last_volume_collection_finished = self.start + self.n_volumes_reduced * self.TR
+        # lag = time.time() - last_volume_collection_finished
 
-        time_elapsed = time.time() - self.start_time
-        stats1 = "Time: {}, Time2TR: {}, TrialType: {}".format(
-            str(time_elapsed)[:-7],
-            str(time_elapsed // 2 + 1),
-            self.timing_vector[self.current_tr]
+        # time_elapsed = time.time() - self.start_time
+        # stats1 = "Time: {}, Time2TR: {}, TrialType: {}".format(
+        #     str(time_elapsed)[:-7],
+        #     str(time_elapsed // 2 + 1),
+        #     self.timing_vector[self.current_tr]
 
-        )
-        self.center_text(stats1, y= self.xywh[3]//9 * 12, size = 20)
+        # )
+        # self.center_text(stats1, y= self.xywh[3]//9 * 12, size = 20)
 
-        stats2 = "Volumes_Assembled: {}, Volumes_Averaged: {}, Lag {}".format(
-            self.data_manager.volumizer.n_volumes_queued,
-            self.n_volumes_reduced,
-            str(lag)[:-7]
-        )
-        self.center_text(stats2, y= self.xywh[3]//9 * 12 + 30, size = 20)
-
+        # stats2 = "Volumes_Assembled: {}, Volumes_Averaged: {}, Lag {}".format(
+        #     self.data_manager.volumizer.n_volumes_queued,
+        #     self.n_volumes_reduced,
+        #     str(lag)[:-7]
+        # )
+        # self.center_text(stats2, y= self.xywh[3]//9 * 12 + 30, size = 20)
+        pass
+    
     def run(self, random=False):
         mainloop = True
         self.itival = 0
@@ -340,8 +258,8 @@ class Thermometer(PyGameVisualizer):
             self.clock.tick(self.rate)
             tic = time.time()
 
-            #Handle screen size changes 
-            # This currently doesn't always work. 
+            #Handle screen size changes
+            # This currently doesn't always work.
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     mainloop = False
@@ -351,13 +269,12 @@ class Thermometer(PyGameVisualizer):
             # Redraw the background
             self.screen.fill(self.bg_color)
 
-            # Get the newest temperature 
+            # Get the newest temperature
             self.update_temp(random)
 
             if self.debug:
                 self.draw_stats()
                 if self.current_tr != old_tr:
-                    self.log_times()
                     print(self.temp)
                     old_tr = self.current_tr
 
@@ -377,21 +294,21 @@ class Thermometer(PyGameVisualizer):
 
     def draw_temp(self):
         # Draw a small rectangle within the box corresponding to temperature
-        
+
         sw, sh = self.screen.get_size()
         temp_indicator_width = int(sw * .1 // 1) - 6 + 1
         temp_indicator_heigth = int(sh * .05 // 1)
 
         thermometer_height = self.xywh[3]
         thermometer_top = (sh - thermometer_height) // 2
-        thermometer_bottom = thermometer_top + thermometer_height - h
-     
+        thermometer_bottom = thermometer_top + thermometer_height
+
         temp_x = int((sw - self.xywh[2]) // 2) + 3
         temp_y = thermometer_top + int(((thermometer_bottom - thermometer_top) * (100-self.temp)/100) // 1)
 
         # If we are limiting how much thermometer can move, check limits:
         if not hasattr(self, 'old_y'):
-            self.old_y = y
+            self.old_y = temp_y
 
         diff = temp_y - self.old_y
         if abs(diff) > self.max_move:
@@ -415,10 +332,10 @@ class Thermometer(PyGameVisualizer):
     def get_temp(self):
         self.update_state()
 
-        if len(self.roi_tc) > self.buffer_size:
-            start_ind = max(len(self.roi_tc) - self.buffer_size, 0)
-            mean = np.mean(self.roi_tc[start_ind:])
-            std = np.std(self.roi_tc[start_ind:])
+        if len(self.state_history) > self.buffer_size:
+            start_ind = max(len(self.state_history) - self.buffer_size, 0)
+            mean = np.mean(self.state_history[start_ind:])
+            std = np.std(self.state_history[start_ind:])
             temp = 50 + 15 * ((self.state - mean) / std)
             return temp
         else:

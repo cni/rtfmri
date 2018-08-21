@@ -15,7 +15,7 @@ from dcmstack.extract import default_extractor
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-logger.setLevel(logging.WARNING)
+#logger.setLevel(logging.WARNING)
 logging.basicConfig(format='%(asctime)s %(message)s')
 
 def time_it(tic, message, level='debug'):
@@ -170,6 +170,7 @@ class DicomFinder(Finder):
         # keep track of dicoms queued for timing evaluation.
         self.n_dicoms_queued = 0
         self.total_time_dicom_retrival = 0
+        self.total_filter_dicom_time = 0        
         self.dicom_filter = None
 
     def use_vec(self, vec):
@@ -211,8 +212,9 @@ class DicomFinder(Finder):
                     new_files = self.dicom_filter.filter(new_files, vec)
 
                 if new_files:
-                    #files_to_enqueue = min(50, len(new_files))
-                    #new_files = new_files[:len(new_files)]
+                    if len(self.dicom_files)==0:
+                        files_to_enqueue = min(46, len(new_files))
+                        new_files = new_files[:files_to_enqueue]
                     logger.debug(("Putting {:d} files into dicom queue"
                                   .format(len(new_files))))
 
@@ -253,7 +255,7 @@ class DicomFinder(Finder):
                     tic = time.time()
 
                 # Update the set of files on the queue
-                self.dicom_files.update(set(new_files))
+                self.dicome_files = self.dicom_files.update(set(new_files))
 
             if not self.series_q.empty():
                 # Grab the next series path off the queue
@@ -288,7 +290,6 @@ class Volumizer(Finder):
 
         self.n_dicoms_dequeued = 0
         self.n_volumes_queued = 0
-
 
         self.total_dequeue_time = 0
         self.total_assembly_time = 0
@@ -414,7 +415,6 @@ class Volumizer(Finder):
         self.filtered = False
         self.skipped_yet = False
         while self.is_alive:
-
             try:
                 tic = time.time()
                 dcm = self.dicom_q.get(timeout=self.interval)
